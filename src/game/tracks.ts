@@ -6,35 +6,25 @@ import { TrackDefinition, TrackSectionType } from '../types/game';
 
 export const TRACK_PRESETS: TrackDefinition[] = [
   {
-    id: 'monza',
-    name: 'Autodromo Nazionale Monza',
-    country: 'Italy 🇮🇹',
-    description: 'The Temple of Speed. Long slipstream straights, high-speed 90° sweepers, and the tactical Serraglio bottleneck straight.',
-    difficulty: 'Beginner',
-    lapsDefault: 2,
-    sections: [
-      'T', 'T', 'T', 'T', 'T',
-      'R', 'R',
-      'T', 'T', 'T', 'S', 'S', 'S', 'T', 'T', 'T',
-      'R', 'R',
-      'T', 'T', 'T', 'T', 'T', 'T',
-      'R', 'R',
-      'T', 'T', 'S', 'S', 'S', 'T', 'T', 'T',
-      'R', 'R',
-      'T', 'T', 'T', 'T',
-    ],
-    segments: [
-      'TTTTT',     // Start Straight
-      'CC',        // Turn 1 (90°)
-      'TTTSSSTTT', // Right Straight (Serraglio bottleneck)
-      'CC',        // Turn 2 (90°)
-      'TTTTTT',    // Top Backstretch
-      'CC',        // Turn 3 (90°)
-      'TTSSSTTT',  // Left Straight
-      'CC',        // Turn 4 (90° Parabolica)
-      'TTTT',      // Finish Straight
-    ],
-  },
+  id: 'bathurst',
+  name: 'Bathurst',
+  country: 'Australia 🏁',
+  description: 'Iconic Australian race track climbing Mount Panorama.',
+  difficulty: 'Intermediate',
+  lapsDefault: 2,
+  sections: ["T", "T", "L", "L", "T", "T", "T", "T", "T", "R", "R", "R", "T", "T", "L", "L", "L", "L", "S", "R", "T", "R", "L", "T", "T", "T", "T", "L", "T", "L", "T", "T", "R", "L", "L", "R", "S", "S", "R", "T", "T", "L", "L", "T", "T", "S", "S", "L", "L", "T", "R", "T", "T", "T", "T", "T", "T", "T", "T", "R", "T", "L", "T", "L", "T", "L", "T", "T", "T", "T", "T", "T"],
+  segments: [
+    'TTTTT',
+    'CC',
+    'TTSTT',
+    'CC',
+    'TTTT',
+    'CC',
+    'TTSTT',
+    'CC',
+    'TTTT',
+  ],
+},
     {
     id: 'custom_circuit',
     name: 'Custom Circuit',
