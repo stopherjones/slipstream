@@ -35,6 +35,26 @@ export const TRACK_PRESETS: TrackDefinition[] = [
       'TTTT',      // Finish Straight
     ],
   },
+    {
+    id: 'custom_circuit',
+    name: 'Custom Circuit',
+    country: 'Custom 🏁',
+    description: 'Custom racing circuit with 45° corners.',
+    difficulty: 'Intermediate',
+    lapsDefault: 2,
+    sections: ["T","T","R","T","T","L","S","S","S","L","L","L","L","T","T","R","T","T","L","T","T","S","S","S","L","L","L","L","T","T"],
+    segments: [
+      'TTTTS',
+      'CC',
+      'TTSTT',
+      'CC',
+      'TTTT',
+      'CC',
+      'TTSTT',
+      'CC',
+      'TTTT',
+    ],
+  },
   {
     id: 'silverstone',
     name: 'Silverstone Grand Prix',
