@@ -11,6 +11,7 @@ import {
   LogEntry,
   ReachMap,
   TargetSelection,
+  TrackDefinition,
 } from './types/game';
 import {
   baseValue,
@@ -38,7 +39,10 @@ import {
 } from './game/engine';
 import {
   DEFAULT_TRACK_SEGMENTS,
+  getCircuitById,
+  loadCurrentCircuitId,
   loadStoredTrack,
+  saveCurrentCircuitId,
   saveStoredTrack,
 } from './game/tracks';
 import { sound } from './game/audio';
@@ -48,6 +52,7 @@ import { ActionControls } from './components/ActionControls';
 import { RulesModal } from './components/RulesModal';
 import { SettingsModal } from './components/SettingsModal';
 import { TrackEditorModal } from './components/TrackEditorModal';
+import { TrackSelectorModal } from './components/TrackSelectorModal';
 import { RaceLogDrawer } from './components/RaceLogDrawer';
 
 export default function App() {
@@ -55,34 +60,52 @@ export default function App() {
   const [options, setOptions] = useState<GameOptions>({
     mode: 'dice',
     bot: 'medium',
-    laps: 1,
+    laps: 2,
     mom: true,
     head: true,
     skip: false,
     pass: false,
   });
 
-  // Track segments
-  const [segments, setSegments] = useState<string[]>(() =>
-    loadStoredTrack('dice')
+  // Current Circuit (Monza, Silverstone, Suzuka, Monaco, etc.)
+  const [currentCircuit, setCurrentCircuit] = useState<TrackDefinition>(() =>
+    getCircuitById(loadCurrentCircuitId())
+  );
+
+  // Track segments (9 rectilinear segments)
+  const [segments, setSegments] = useState<string[]>(
+    () => currentCircuit.segments ?? loadStoredTrack('dice')
   );
 
   // Sound enabled
   const [soundEnabled, setSoundEnabled] = useState(sound.enabled);
 
   // Modals & Drawers
+  const [trackSelectorOpen, setTrackSelectorOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
   const [editorActive, setEditorActive] = useState(false);
 
-  // Precomputed track array
-  const trackArray = useMemo(() => getTrackArray(segments), [segments]);
+  // Precomputed track arrays & outside lane metadata for corners
+  const trackArray = useMemo(() => {
+    if (currentCircuit.sections && currentCircuit.sections.length > 0) {
+      return currentCircuit.sections.map((s) => (s === 'L' || s === 'R' ? 'C' : s));
+    }
+    return segments.join('').split('') as ('T' | 'S' | 'C')[];
+  }, [currentCircuit, segments]);
+
+  const outsideLanes = useMemo(() => {
+    if (currentCircuit.sections && currentCircuit.sections.length > 0) {
+      return currentCircuit.sections.map((s) => (s === 'L' ? (1 as 0 | 1) : (0 as 0 | 1)));
+    }
+    return trackArray.map((c) => (c === 'C' ? (1 as 0 | 1) : (1 as 0 | 1)));
+  }, [currentCircuit, trackArray]);
   const trackLength = trackArray.length;
   const endPos = useMemo(
-    () => getEndPosition(segments, options.laps),
-    [segments, options.laps]
+    () => options.laps * trackLength,
+    [options.laps, trackLength]
   );
 
   // Game state
@@ -99,12 +122,13 @@ export default function App() {
     log: [
       {
         id: 'init-1',
-        t: '🏁 Slipstream Tactical Racer ready. Roll dice to begin!',
+        t: `🏁 ${currentCircuit.name} ready (${trackLength} spaces · ${currentCircuit.country}). Roll dice to start!`,
         n: 1,
       },
     ],
     win: null,
     sel: createEmptySelection(),
+    discardedCards: [[], []],
   }));
 
   // Re-sync track when mode changes
@@ -150,6 +174,7 @@ export default function App() {
       log: initialLogs,
       win: null,
       sel: createEmptySelection(),
+      discardedCards: [[], []],
     });
   }, [options]);
 
@@ -158,12 +183,14 @@ export default function App() {
     sound.playRoll();
     setGameState((prev) => {
       const diceCount = options.mode === 'cards' ? 3 : 5;
+      let didReshuffle = false;
       const nextP = prev.P.map((p) => {
         const copy = { ...p };
         if (options.mode === 'cards') {
           if (copy.deck.length < diceCount) {
             copy.deck = shuffle(CARDS);
             copy.played = [];
+            didReshuffle = true;
           }
           copy.dice = copy.deck.splice(0, diceCount);
         } else {
@@ -212,6 +239,7 @@ export default function App() {
         sel: createEmptySelection(),
         P: nextP,
         log: newLogs,
+        discardedCards: didReshuffle ? [[], []] : (prev.discardedCards ?? [[], []]),
       };
     });
   }, [options]);
@@ -241,8 +269,8 @@ export default function App() {
       gameState,
       options
     );
-    return computeReach(activeIdx, val, gameState, trackArray, options);
-  }, [gameState, options, trackArray]);
+    return computeReach(activeIdx, val, gameState, trackArray, options, outsideLanes);
+  }, [gameState, options, trackArray, outsideLanes]);
 
   // Select Die or Card
   const handleSelectDie = useCallback(
@@ -260,7 +288,7 @@ export default function App() {
           prev,
           options
         );
-        const reach = computeReach(activeIdx, val, prev, trackArray, options);
+        const reach = computeReach(activeIdx, val, prev, trackArray, options, outsideLanes);
 
         // Validate existing target or auto-select valid destination
         const currentKey = nextSel.tgt ? `${nextSel.tgt.pos}:${nextSel.tgt.lane}` : '';
@@ -284,7 +312,7 @@ export default function App() {
         return { ...prev, sel: nextSel };
       });
     },
-    [options, trackArray]
+    [options, trackArray, outsideLanes]
   );
 
   // Adjust slipstream or momentum tokens
@@ -305,7 +333,7 @@ export default function App() {
             prev,
             options
           );
-          const reach = computeReach(activeIdx, val, prev, trackArray, options);
+          const reach = computeReach(activeIdx, val, prev, trackArray, options, outsideLanes);
           const currentKey = nextSel.tgt ? `${nextSel.tgt.pos}:${nextSel.tgt.lane}` : '';
           if (!currentKey || !(currentKey in reach)) {
             const reachKeys = Object.keys(reach).filter((k) => k !== `${p.pos}:${p.lane}`);
@@ -322,7 +350,7 @@ export default function App() {
         return { ...prev, sel: nextSel };
       });
     },
-    [options, trackArray]
+    [options, trackArray, outsideLanes]
   );
 
   // Tap track space
@@ -347,7 +375,7 @@ export default function App() {
       const base = baseValue(die, options.mode);
       const effectiveSpd = calculateSpeed(playerIdx, die, currentState, options);
       const val = calculateEffectiveValue(playerIdx, pick, die, currentState, options);
-      const reach = computeReach(playerIdx, val, currentState, trackArray, options);
+      const reach = computeReach(playerIdx, val, currentState, trackArray, options, outsideLanes);
 
       let tg = pick.tgt;
       let key = tg ? `${tg.pos}:${tg.lane}` : '';
@@ -425,7 +453,7 @@ export default function App() {
         sound.playWin();
         newLogs.push({
           id: `win-${Date.now()}`,
-          t: `🏆 Player ${playerIdx + 1} crosses the finish line!`,
+          t: `🏆 Player ${playerIdx + 1} crosses the finish line and wins!`,
         });
       }
 
@@ -440,11 +468,12 @@ export default function App() {
           dv: nextDv,
           log: newLogs,
           win: winIndex,
+          phase: winIndex !== null ? 'over' : currentState.phase,
         },
         winIndex,
       };
     },
-    [options, trackArray, trackLength, endPos]
+    [options, trackArray, trackLength, endPos, outsideLanes]
   );
 
   // Reveal Phase: leader moves, then trailer enters react phase
@@ -498,7 +527,7 @@ export default function App() {
           trailerReactState,
           options
         );
-        const reach = computeReach(trailer, val, trailerReactState, trackArray, options);
+        const reach = computeReach(trailer, val, trailerReactState, trackArray, options, outsideLanes);
         const reachKeys = Object.keys(reach).filter(
           (k) => k !== `${state.P[trailer].pos}:${state.P[trailer].lane}`
         );
@@ -516,7 +545,7 @@ export default function App() {
         setTimeout(() => {
           setGameState((curr) => {
             if (curr.phase !== 'react' || curr.tr !== 1) return curr;
-            const botReaction = computeBotReact(curr, trackArray, options);
+            const botReaction = computeBotReact(curr, trackArray, options, outsideLanes);
             const botPick: TargetSelection = {
               die: curr.sel.die,
               slip: botReaction.sl,
@@ -532,7 +561,7 @@ export default function App() {
         }, 700);
       }
     },
-    [options, executeMove, trackArray]
+    [options, executeMove, trackArray, outsideLanes]
   );
 
   // Lock In choice
@@ -555,11 +584,11 @@ export default function App() {
         // Player 1 picked, Bot now picks
         const botLeaderChoice =
           leader === 1
-            ? computeBotLead(gameState, trackArray, options)
+            ? computeBotLead(gameState, trackArray, options, outsideLanes)
             : null;
         const botTrailerChoice =
           leader === 0
-            ? computeBotTrail(gameState, trackArray, options)
+            ? computeBotTrail(gameState, trackArray, options, outsideLanes)
             : null;
 
         const botPick: TargetSelection = {
@@ -589,7 +618,7 @@ export default function App() {
         { ...gameState, picks: nextPicks }
       );
     }
-  }, [gameState, options, trackArray, handleReveal]);
+  }, [gameState, options, trackArray, outsideLanes, handleReveal]);
 
   // Player 2 takes over in pass-and-play
   const handleStartPlayer2 = useCallback(() => {
@@ -631,6 +660,56 @@ export default function App() {
     }
   }, [gameState, options]);
 
+  // Switch circuit from selector
+  const handleSelectCircuit = useCallback(
+    (newCircuit: TrackDefinition) => {
+      setCurrentCircuit(newCircuit);
+      setSegments(newCircuit.segments);
+      saveCurrentCircuitId(newCircuit.id);
+      saveStoredTrack(options.mode, newCircuit.segments);
+      if (newCircuit.lapsDefault) {
+        setOptions((prev) => ({ ...prev, laps: newCircuit.lapsDefault }));
+      }
+      const randomStartLead =
+        options.bot === 'medium' ? (Math.random() < 0.5 ? 1 : 0) : 0;
+      setGameState({
+        round: 1,
+        step: 0,
+        lead: randomStartLead,
+        tr: 1 - randomStartLead,
+        spd: [0, 0],
+        dv: [0, 0],
+        phase: 'roll',
+        P: [createInitialPlayer(0), createInitialPlayer(1)],
+        picks: [null, null],
+        log: [
+          {
+            id: `circuit-${Date.now()}`,
+            t: `🏁 Circuit selected: ${newCircuit.name} (${newCircuit.segments.join('').length} spaces · ${newCircuit.country}). Ready to race!`,
+            n: 1,
+          },
+        ],
+        win: null,
+        sel: createEmptySelection(),
+        discardedCards: [[], []],
+      });
+    },
+    [options.bot, options.mode]
+  );
+
+  // Update segments from Track Architect
+  const handleUpdateSegments = useCallback(
+    (newSegments: string[]) => {
+      setSegments(newSegments);
+      setCurrentCircuit((prev) => ({
+        ...prev,
+        segments: newSegments,
+      }));
+      saveStoredTrack(options.mode, newSegments);
+    },
+    [options.mode]
+  );
+
   // Editor toggle on cell tap
   const handleToggleCellEditor = useCallback(
     (cellIndex: number) => {
@@ -646,6 +725,10 @@ export default function App() {
         k -= nextSegs[j].length;
       }
       setSegments(nextSegs);
+      setCurrentCircuit((prev) => ({
+        ...prev,
+        segments: nextSegs,
+      }));
       saveStoredTrack(options.mode, nextSegs);
       resetGame();
     },
@@ -656,6 +739,7 @@ export default function App() {
     <div className="h-full h-[100dvh] w-full flex flex-col justify-between overflow-hidden bg-stone-950 text-stone-100 select-none touch-manipulation">
       {/* 1. Top HUD Header */}
       <HUD
+        circuit={currentCircuit}
         gameState={gameState}
         options={options}
         trackLength={trackLength}
@@ -665,11 +749,13 @@ export default function App() {
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenEditor={() => setEditorOpen(true)}
         onOpenLog={() => setLogOpen(true)}
+        onOpenTrackSelector={() => setTrackSelectorOpen(true)}
       />
 
       {/* 2. Interactive SVG Track (Flex-1, auto-fit, zero scroll!) */}
       <main className="flex-1 min-h-0 w-full relative flex items-center justify-center p-1 sm:p-2 overflow-hidden">
         <TrackCanvas
+          track={currentCircuit}
           segments={segments}
           gameState={gameState}
           options={options}
@@ -678,6 +764,7 @@ export default function App() {
           editorMode={editorActive}
           onSelectTarget={handleSelectTarget}
           onToggleCellEditor={handleToggleCellEditor}
+          onOpenTrackSelector={() => setTrackSelectorOpen(true)}
         />
       </main>
 
@@ -696,6 +783,14 @@ export default function App() {
       />
 
       {/* Modals & Overlays */}
+      <TrackSelectorModal
+        isOpen={trackSelectorOpen}
+        onClose={() => setTrackSelectorOpen(false)}
+        currentCircuitId={currentCircuit.id}
+        onSelectCircuit={handleSelectCircuit}
+        onOpenEditor={() => setEditorOpen(true)}
+      />
+
       <RulesModal
         isOpen={rulesOpen}
         onClose={() => setRulesOpen(false)}
@@ -715,11 +810,13 @@ export default function App() {
       <TrackEditorModal
         isOpen={editorOpen}
         onClose={() => setEditorOpen(false)}
+        currentCircuit={currentCircuit}
+        onSelectCircuit={handleSelectCircuit}
         segments={segments}
         options={options}
         editorActive={editorActive}
         onToggleEditorActive={setEditorActive}
-        onUpdateSegments={setSegments}
+        onUpdateSegments={handleUpdateSegments}
         onRestartRace={resetGame}
       />
 

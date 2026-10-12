@@ -47,13 +47,60 @@ export interface ReachMap {
   [coordKey: string]: number; // key: "pos:lane", value: pips used
 }
 
+export interface Waypoint {
+  x: number;
+  y: number;
+}
+
+export type TrackSectionType = 'T' | 'S' | 'L' | 'R';
+
+export interface TrackCellMeta {
+  type: 'T' | 'S' | 'C';
+  outsideLane?: 0 | 1; // 1 if turning right (left lane is outside), 0 if turning left (right lane is outside)
+}
+
 export interface TrackDefinition {
   id: string;
   name: string;
+  country: string;
   description: string;
   difficulty: 'Beginner' | 'Intermediate' | 'Pro';
-  segments: string[]; // 9 segments: [Start straight, C1, Right, C2, Top, C3, Left, C4, Finish straight]
-  bestTimeLaps?: number;
+  lapsDefault: number;
+  segments: string[]; // 9 segments fallback
+  sections?: TrackSectionType[]; // Section-based layout: 'T' (twin), 'S' (single), 'L' (45° left), 'R' (45° right)
+  cellTypes?: TrackCellMeta[];
+  waypoints?: Waypoint[];
+}
+
+export interface CircuitCellRender {
+  idx: number;
+  type: 'T' | 'S' | 'C';
+  outsideLane: 0 | 1;
+  poly0: string;
+  poly1: string;
+  center0: [number, number];
+  center1: [number, number];
+  angle: number; // tangent direction in degrees (0..360)
+  kerbPoly?: string;
+  kerbSide?: 'left' | 'right';
+}
+
+export interface CircuitRenderGeometry {
+  W: number;
+  H: number;
+  minX?: number;
+  minY?: number;
+  width?: number;
+  height?: number;
+  viewBox?: string;
+  cells: CircuitCellRender[];
+  finishLine: {
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    angle: number;
+  };
 }
 
 export interface GameState {
@@ -69,6 +116,7 @@ export interface GameState {
   log: LogEntry[];
   win: number | null;
   sel: TargetSelection;
+  discardedCards?: [number[], number[]];
 }
 
 export interface GeoCell {

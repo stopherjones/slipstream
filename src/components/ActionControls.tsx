@@ -11,6 +11,7 @@ import {
   MOM_VAL,
 } from '../game/engine';
 import { ArrowRight, Dices, ChevronRight, Lock, RotateCcw } from 'lucide-react';
+import { CardTracker } from './CardTracker';
 
 interface ActionControlsProps {
   gameState: GameState;
@@ -363,6 +364,15 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
           )
         )}
       </div>
+
+      {/* Discrete Card Discard Tracker (Card Mode only) */}
+      {options.mode === 'cards' && (
+        <CardTracker
+          discardedCards={gameState.discardedCards ?? [[], []]}
+          round={gameState.round}
+          isBot={options.bot === 'medium'}
+        />
+      )}
     </footer>
   );
 };

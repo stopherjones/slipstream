@@ -61,7 +61,7 @@ export function getTrackLength(segments: string[]): number {
 }
 
 export function getEndPosition(segments: string[], laps: number): number {
-  return laps * getTrackLength(segments) - 1;
+  return laps * getTrackLength(segments);
 }
 
 export function getTrackCellType(pos: number, track: string[]): 'T' | 'S' | 'C' {
@@ -118,12 +118,13 @@ export function computeReach(
   v: number,
   gameState: GameState,
   track: string[],
-  options: GameOptions
+  options: GameOptions,
+  outsideLanes?: (0 | 1)[]
 ): ReachMap {
   const p = gameState.P[playerIdx];
   const opp = gameState.P[1 - playerIdx];
   const reach: ReachMap = {};
-  const endPos = options.laps * track.length - 1;
+  const endPos = options.laps * track.length;
 
   for (const L of [0, 1]) {
     let pos = p.pos;
@@ -134,7 +135,8 @@ export function computeReach(
       const nextPos = pos + 1;
       const cellType = getTrackCellType(nextPos, track);
       const ln = cellType === 'S' ? 0 : L;
-      const cost = cellType === 'C' && ln === 1 ? 2 : 1;
+      const outLane = outsideLanes ? outsideLanes[nextPos % track.length] ?? 1 : 1;
+      const cost = cellType === 'C' && ln === outLane ? 2 : 1;
 
       if (cost > b || (opp.pos === nextPos && opp.lane === ln)) {
         break;
@@ -192,7 +194,7 @@ export function getPassTarget(
 ): number {
   const opp = gameState.P[1 - playerIdx];
   const fromPos = gameState.P[playerIdx].pos;
-  const endPos = options.laps * track.length - 1;
+  const endPos = options.laps * track.length;
   if (
     options.pass &&
     fromPos < opp.pos &&
@@ -219,10 +221,11 @@ function botMove(
   t: { pos: number; lane: number },
   gameState: GameState,
   track: string[],
-  options: GameOptions
+  options: GameOptions,
+  outsideLanes?: (0 | 1)[]
 ): { pos: number; lane: number } {
   const v = calculateSpeed(i, die, gameState, options) + sl * SLIP_VAL + mo * MOM_VAL;
-  const R = computeReach(i, v, gameState, track, options);
+  const R = computeReach(i, v, gameState, track, options, outsideLanes);
   if (!(t.pos + ':' + t.lane in R)) {
     return { pos: gameState.P[i].pos, lane: gameState.P[i].lane };
   }
@@ -249,10 +252,11 @@ function botCandidates(
   mo: number,
   gameState: GameState,
   track: string[],
-  options: GameOptions
+  options: GameOptions,
+  outsideLanes?: (0 | 1)[]
 ): { pos: number; lane: number }[] {
   const v = calculateSpeed(i, die, gameState, options) + sl * SLIP_VAL + mo * MOM_VAL;
-  const R = computeReach(i, v, gameState, track, options);
+  const R = computeReach(i, v, gameState, track, options, outsideLanes);
   const out: { pos: number; lane: number }[] = [];
   for (const k in R) {
     const [n, l] = k.split(':').map(Number);
@@ -271,7 +275,7 @@ function botEval(
 ): number {
   const a = gameState.P[me];
   const b = gameState.P[1 - me];
-  const endPos = options.laps * track.length - 1;
+  const endPos = options.laps * track.length;
   if (a.pos >= endPos) return 1000;
   if (b.pos >= endPos) return -1000;
 
@@ -296,7 +300,8 @@ function botBestReact(
   uo: { sl: number; mo: number },
   gameState: GameState,
   track: string[],
-  options: GameOptions
+  options: GameOptions,
+  outsideLanes?: (0 | 1)[]
 ): { sl: number; mo: number; tgt: { pos: number; lane: number }; sc: number; out: { pos: number; lane: number } } {
   const p = gameState.P[i];
   let best: {
@@ -309,8 +314,8 @@ function botBestReact(
 
   for (let sl = 0; sl <= Math.min(p.slip, 2); sl++) {
     for (let mo = 0; mo <= Math.min(p.mom, 2); mo++) {
-      for (const t of botCandidates(i, die, sl, mo, gameState, track, options)) {
-        const out = botMove(i, die, sl, mo, t, gameState, track, options);
+      for (const t of botCandidates(i, die, sl, mo, gameState, track, options, outsideLanes)) {
+        const out = botMove(i, die, sl, mo, t, gameState, track, options, outsideLanes);
         const sp = p.pos;
         const sq = p.lane;
         p.pos = out.pos;
@@ -415,9 +420,10 @@ export function computeStepFinishedState(
       }
     }
 
-    // End of round momentum
+    // End of round momentum & discard update
     const totalSteps = getRoundSteps(options);
-    if (options.mom && state.step + 1 >= totalSteps) {
+    const isRoundEnd = state.step + 1 >= totalSteps;
+    if (options.mom && isRoundEnd) {
       const roundDiff = p0.pos - p1.pos;
       if (roundDiff !== 0) {
         const roundLeader = roundDiff > 0 ? 0 : 1;
@@ -432,22 +438,37 @@ export function computeStepFinishedState(
         });
       }
     }
+
+    if (isRoundEnd && options.mode === 'cards') {
+      outLogs.push({
+        id: `tracker-update-${Date.now()}-${Math.random()}`,
+        t: `Round ${state.round} complete: 3 cards committed to player discard piles`,
+      });
+    }
   }
+
+  const isRoundEnd = state.step + 1 >= getRoundSteps(options);
+  const updatedDiscards: [number[], number[]] =
+    isRoundEnd && options.mode === 'cards'
+      ? [[...p0.played], [...p1.played]]
+      : (state.discardedCards ?? [[], []]);
 
   return {
     ...state,
     step: state.step + 1,
     P: [p0, p1],
     picks: [null, null],
-    phase: 'result',
+    phase: state.win !== null ? 'over' : 'result',
     log: [...state.log, ...outLogs],
+    discardedCards: updatedDiscards,
   };
 }
 
 export function computeBotLead(
   gameState: GameState,
   track: string[],
-  options: GameOptions
+  options: GameOptions,
+  outsideLanes?: (0 | 1)[]
 ): { d: number; sl: number; mo: number; tgt: { pos: number; lane: number } } {
   const sim = cloneSimState(gameState);
   const B = 1;
@@ -462,17 +483,17 @@ export function computeBotLead(
     if (p.used.includes(d)) return;
     for (let sl = 0; sl <= Math.min(p.slip, 1); sl++) {
       for (let mo = 0; mo <= Math.min(p.mom, 1); mo++) {
-        botCandidates(B, c, sl, mo, sim, track, options).forEach((t) =>
+        botCandidates(B, c, sl, mo, sim, track, options, outsideLanes).forEach((t) =>
           opts.push({ d, sl, mo, tgt: t, sum: 0 })
         );
       }
     }
   });
 
-  const endPos = options.laps * track.length - 1;
+  const endPos = options.laps * track.length;
 
   for (const op of opts) {
-    const out = botMove(B, p.dice[op.d], op.sl, op.mo, op.tgt, sim, track, options);
+    const out = botMove(B, p.dice[op.d], op.sl, op.mo, op.tgt, sim, track, options, outsideLanes);
     for (const H of S) {
       sim.P[B].pos = out.pos;
       sim.P[B].lane = out.lane;
@@ -480,7 +501,7 @@ export function computeBotLead(
       if (out.pos >= endPos) {
         sc = 1000;
       } else {
-        const r = botBestReact(0, H[0] ?? 3, { sl: op.sl, mo: op.mo }, sim, track, options);
+        const r = botBestReact(0, H[0] ?? 3, { sl: op.sl, mo: op.mo }, sim, track, options, outsideLanes);
         sc = -r.sc;
         sim.P[0].pos = sO.length ? sO[0] : r.out.pos;
         sim.P[0].lane = sO.length ? sO[1] : r.out.lane;
@@ -496,7 +517,7 @@ export function computeBotLead(
   if (opts.length === 0) {
     const firstAvail = p.dice.findIndex((_, idx) => !p.used.includes(idx));
     const d = Math.max(0, firstAvail);
-    const cands = botCandidates(B, p.dice[d], 0, 0, sim, track, options);
+    const cands = botCandidates(B, p.dice[d], 0, 0, sim, track, options, outsideLanes);
     return { d, sl: 0, mo: 0, tgt: cands[0] ?? { pos: p.pos, lane: p.lane } };
   }
 
@@ -506,7 +527,8 @@ export function computeBotLead(
 export function computeBotTrail(
   gameState: GameState,
   track: string[],
-  options: GameOptions
+  options: GameOptions,
+  outsideLanes?: (0 | 1)[]
 ): { d: number; sum: number } {
   const sim = cloneSimState(gameState);
   const B = 1;
@@ -515,19 +537,19 @@ export function computeBotTrail(
   const sO = [o.pos, o.lane];
   const S = Array.from({ length: 30 }, () => sampleHand(o, options.mode));
   let best: { d: number; sum: number } | null = null;
-  const endPos = options.laps * track.length - 1;
+  const endPos = options.laps * track.length;
 
   p.dice.forEach((c, d) => {
     if (p.used.includes(d)) return;
     let sum = 0;
     for (const H of S) {
-      const l = botBestReact(0, H[0] ?? 3, { sl: 0, mo: 0 }, sim, track, options);
+      const l = botBestReact(0, H[0] ?? 3, { sl: 0, mo: 0 }, sim, track, options, outsideLanes);
       sim.P[0].pos = l.out.pos;
       sim.P[0].lane = l.out.lane;
       sum +=
         l.out.pos >= endPos
           ? -1000
-          : botBestReact(B, c, { sl: l.sl, mo: l.mo }, sim, track, options).sc;
+          : botBestReact(B, c, { sl: l.sl, mo: l.mo }, sim, track, options, outsideLanes).sc;
       sim.P[0].pos = sO[0];
       sim.P[0].lane = sO[1];
     }
@@ -547,7 +569,8 @@ export function computeBotTrail(
 export function computeBotReact(
   gameState: GameState,
   track: string[],
-  options: GameOptions
+  options: GameOptions,
+  outsideLanes?: (0 | 1)[]
 ): { sl: number; mo: number; tgt: { pos: number; lane: number } } {
   const sim = cloneSimState(gameState);
   const p = sim.P[1];
@@ -555,6 +578,6 @@ export function computeBotReact(
   const dieIdx = pick?.die ?? sim.sel.die ?? 0;
   const die = p.dice[dieIdx];
   const uo = { sl: 0, mo: 0 };
-  const b = botBestReact(1, die, uo, sim, track, options);
+  const b = botBestReact(1, die, uo, sim, track, options, outsideLanes);
   return { sl: b.sl, mo: b.mo, tgt: b.tgt };
 }

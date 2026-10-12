@@ -1,5 +1,5 @@
 import React from 'react';
-import { GameOptions, GameState } from '../types/game';
+import { GameOptions, GameState, TrackDefinition } from '../types/game';
 import { getRoundSteps } from '../game/engine';
 import {
   Volume2,
@@ -10,9 +10,12 @@ import {
   History,
   Bot,
   User,
+  Compass,
+  ChevronDown,
 } from 'lucide-react';
 
 interface HUDProps {
+  circuit: TrackDefinition;
   gameState: GameState;
   options: GameOptions;
   trackLength: number;
@@ -22,9 +25,11 @@ interface HUDProps {
   onOpenSettings: () => void;
   onOpenEditor: () => void;
   onOpenLog: () => void;
+  onOpenTrackSelector: () => void;
 }
 
 export const HUD: React.FC<HUDProps> = ({
+  circuit,
   gameState,
   options,
   trackLength,
@@ -34,6 +39,7 @@ export const HUD: React.FC<HUDProps> = ({
   onOpenSettings,
   onOpenEditor,
   onOpenLog,
+  onOpenTrackSelector,
 }) => {
   const totalSteps = getRoundSteps(options);
   const p1 = gameState.P[0];
@@ -49,8 +55,8 @@ export const HUD: React.FC<HUDProps> = ({
     <header className="w-full shrink-0 flex flex-col border-b border-stone-800 bg-stone-950/80 backdrop-blur-md">
       {/* Top 1-row compact navigation */}
       <div className="flex items-center justify-between px-3 py-1.5 gap-2 max-w-5xl mx-auto w-full">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <div className="flex items-center gap-1.5 shrink-0">
             <span className="font-extrabold tracking-tight text-white text-base">
               SLIPSTREAM
             </span>
@@ -59,8 +65,20 @@ export const HUD: React.FC<HUDProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center gap-1 text-[11px] text-stone-400 font-medium">
-            <span className="hidden sm:inline">·</span>
+          {/* Quick Track Selector Pill */}
+          <button
+            onClick={onOpenTrackSelector}
+            title="Switch Racing Track"
+            className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-stone-900 border border-stone-800 hover:border-amber-500/60 hover:bg-stone-800/90 text-stone-200 text-[11px] font-semibold transition active:scale-95 group shrink-0"
+          >
+            <span>{circuit.country.split(' ')[1] || '🏁'}</span>
+            <span className="truncate max-w-[85px] sm:max-w-[130px] text-stone-100 group-hover:text-amber-300">
+              {circuit.name.replace(/(Autodromo Nazionale | International Circuit| Grand Prix)/g, '')}
+            </span>
+            <ChevronDown className="w-3 h-3 text-stone-400 group-hover:text-amber-400" />
+          </button>
+
+          <div className="hidden sm:flex items-center gap-1 text-[11px] text-stone-400 font-medium">
             <span className="text-amber-400 font-semibold uppercase text-[10px] tracking-wide">
               {options.mode}
             </span>
@@ -74,6 +92,14 @@ export const HUD: React.FC<HUDProps> = ({
 
         {/* Action icons */}
         <div className="flex items-center gap-1">
+          <button
+            onClick={onOpenTrackSelector}
+            aria-label="Track Selector"
+            title="Track Selector"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-amber-400 hover:text-amber-300 hover:bg-stone-800 active:scale-95 transition"
+          >
+            <Compass className="w-4 h-4" />
+          </button>
           <button
             onClick={onToggleSound}
             aria-label="Toggle sound"
@@ -90,8 +116,9 @@ export const HUD: React.FC<HUDProps> = ({
           </button>
           <button
             onClick={onOpenEditor}
-            aria-label="Track Editor"
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-stone-300 hover:text-white hover:bg-stone-800 active:scale-95 transition"
+            aria-label="Track Architect"
+            title="Custom Track Architect"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-stone-300 hover:text-white hover:bg-stone-800 active:scale-95 transition hidden xs:flex"
           >
             <Sliders className="w-4 h-4" />
           </button>
