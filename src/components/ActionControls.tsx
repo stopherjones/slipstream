@@ -203,6 +203,12 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
 
         {/* Phase: PICK0, PICK1, REACT */}
         {(gameState.phase === 'pick0' || gameState.phase === 'pick1' || gameState.phase === 'react') && (
+          options.bot === 'medium' && gameState.phase === 'react' && gameState.tr === 1 ? (
+            <div className="flex items-center justify-center py-4 gap-2.5 text-xs text-stone-300 font-medium bg-stone-900/60 rounded-xl border border-stone-800">
+              <span className="w-2.5 h-2.5 rounded-full bg-orange-400 animate-ping" />
+              <span>AI Bot is calculating tactical reaction...</span>
+            </div>
+          ) : (
           <>
             {/* Header info */}
             <div className="flex items-center justify-between text-xs text-stone-300 px-0.5">
@@ -354,6 +360,7 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
               )}
             </div>
           </>
+          )
         )}
       </div>
     </footer>

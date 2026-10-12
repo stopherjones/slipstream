@@ -20,6 +20,7 @@ import {
   computeBotReact,
   computeBotTrail,
   computeReach,
+  computeStepFinishedState,
   createEmptySelection,
   createInitialPlayer,
   getActivePlayerIndex,
@@ -252,18 +253,30 @@ export default function App() {
         const p = prev.P[activeIdx];
         const nextSel: TargetSelection = { ...prev.sel, die: dieIdx };
 
-        // Validate target
-        if (nextSel.tgt) {
-          const val = calculateEffectiveValue(
-            activeIdx,
-            nextSel,
-            p.dice[dieIdx],
-            prev,
-            options
-          );
-          const reach = computeReach(activeIdx, val, prev, trackArray, options);
-          const key = `${nextSel.tgt.pos}:${nextSel.tgt.lane}`;
-          if (!(key in reach)) {
+        const val = calculateEffectiveValue(
+          activeIdx,
+          nextSel,
+          p.dice[dieIdx],
+          prev,
+          options
+        );
+        const reach = computeReach(activeIdx, val, prev, trackArray, options);
+
+        // Validate existing target or auto-select valid destination
+        const currentKey = nextSel.tgt ? `${nextSel.tgt.pos}:${nextSel.tgt.lane}` : '';
+        if (!currentKey || !(currentKey in reach)) {
+          const leader = getLeaderIndex(prev.P, prev.lead);
+          const shouldAutoSelect = prev.phase === 'react' || activeIdx === leader;
+          if (shouldAutoSelect) {
+            const reachKeys = Object.keys(reach).filter((k) => k !== `${p.pos}:${p.lane}`);
+            if (reachKeys.length > 0) {
+              const innerKey = reachKeys.find((k) => k.endsWith(':0')) || reachKeys[0];
+              const [tgPos, tgLane] = innerKey.split(':').map(Number);
+              nextSel.tgt = { pos: tgPos, lane: tgLane };
+            } else {
+              nextSel.tgt = null;
+            }
+          } else {
             nextSel.tgt = null;
           }
         }
@@ -284,7 +297,7 @@ export default function App() {
         const nextVal = Math.max(0, Math.min(p[type], prev.sel[type] + delta));
         const nextSel: TargetSelection = { ...prev.sel, [type]: nextVal };
 
-        if (nextSel.tgt && nextSel.die !== null) {
+        if (nextSel.die !== null) {
           const val = calculateEffectiveValue(
             activeIdx,
             nextSel,
@@ -293,9 +306,16 @@ export default function App() {
             options
           );
           const reach = computeReach(activeIdx, val, prev, trackArray, options);
-          const key = `${nextSel.tgt.pos}:${nextSel.tgt.lane}`;
-          if (!(key in reach)) {
-            nextSel.tgt = null;
+          const currentKey = nextSel.tgt ? `${nextSel.tgt.pos}:${nextSel.tgt.lane}` : '';
+          if (!currentKey || !(currentKey in reach)) {
+            const reachKeys = Object.keys(reach).filter((k) => k !== `${p.pos}:${p.lane}`);
+            if (reachKeys.length > 0) {
+              const innerKey = reachKeys.find((k) => k.endsWith(':0')) || reachKeys[0];
+              const [tgPos, tgLane] = innerKey.split(':').map(Number);
+              nextSel.tgt = { pos: tgPos, lane: tgLane };
+            } else {
+              nextSel.tgt = null;
+            }
           }
         }
 
@@ -427,94 +447,6 @@ export default function App() {
     [options, trackArray, trackLength, endPos]
   );
 
-  // Conclude the step and calculate drafting tokens
-  const finishStep = useCallback(
-    (stateAfterBothMoved: GameState) => {
-      const p0 = stateAfterBothMoved.P[0];
-      const p1 = stateAfterBothMoved.P[1];
-      const outLogs: LogEntry[] = [];
-      const updatedP0 = { ...p0 };
-      const updatedP1 = { ...p1 };
-
-      if (stateAfterBothMoved.win === null) {
-        const diff = updatedP0.pos - updatedP1.pos;
-        const gap = Math.abs(diff);
-        const leaderIdx = diff < 0 ? 1 : 0;
-        const leaderSpeed = stateAfterBothMoved.spd[leaderIdx];
-        const trailerIdx = 1 - leaderIdx;
-
-        const isCardsDraft =
-          options.mode === 'cards' &&
-          (leaderSpeed >= 8 ? gap >= 1 && gap <= 2 : leaderSpeed >= 4 && gap === 1);
-
-        if (options.mode === 'dice' && gap >= 1) {
-          const award = gap === 1 ? 2 : 1;
-          if (trailerIdx === 0) {
-            updatedP0.slip = Math.min(4, updatedP0.slip + award);
-          } else {
-            updatedP1.slip = Math.min(4, updatedP1.slip + award);
-          }
-          outLogs.push({
-            id: `token-slip-${Date.now()}`,
-            t: `P${trailerIdx + 1} is ${gap} behind → +${award} slipstream`,
-          });
-        }
-
-        if (isCardsDraft) {
-          if (trailerIdx === 0) {
-            updatedP0.slip = Math.min(4, updatedP0.slip + 1);
-          } else {
-            updatedP1.slip = Math.min(4, updatedP1.slip + 1);
-          }
-          outLogs.push({
-            id: `token-cardslip-${Date.now()}`,
-            t: `P${trailerIdx + 1} is ${gap} behind (leader spd ${leaderSpeed}) → +1 slipstream${
-              options.head ? `; P${leaderIdx + 1} gets headwind` : ''
-            }`,
-          });
-
-          if (options.head) {
-            if (leaderIdx === 0) {
-              updatedP0.head = Math.min(2, updatedP0.head + 1);
-            } else {
-              updatedP1.head = Math.min(2, updatedP1.head + 1);
-            }
-          }
-        }
-
-        // End of round momentum
-        const totalSteps = getRoundSteps(options);
-        if (options.mom && stateAfterBothMoved.step + 1 >= totalSteps) {
-          const roundDiff = updatedP0.pos - updatedP1.pos;
-          if (roundDiff !== 0) {
-            const roundLeader = roundDiff > 0 ? 0 : 1;
-            if (roundLeader === 0) {
-              updatedP0.mom = Math.min(4, updatedP0.mom + 1);
-            } else {
-              updatedP1.mom = Math.min(4, updatedP1.mom + 1);
-            }
-            outLogs.push({
-              id: `token-mom-${Date.now()}`,
-              t: `End of Round ${stateAfterBothMoved.round}: P${
-                roundLeader + 1
-              } leads → +1 momentum`,
-            });
-          }
-        }
-      }
-
-      setGameState({
-        ...stateAfterBothMoved,
-        step: stateAfterBothMoved.step + 1,
-        P: [updatedP0, updatedP1],
-        picks: [null, null],
-        phase: 'result',
-        log: [...stateAfterBothMoved.log, ...outLogs],
-      });
-    },
-    [options]
-  );
-
   // Reveal Phase: leader moves, then trailer enters react phase
   const handleReveal = useCallback(
     (picks: [TargetSelection, TargetSelection], state: GameState) => {
@@ -557,6 +489,26 @@ export default function App() {
         phase: 'react',
       };
 
+      // If Human is trailer, auto-select first reachable space for convenience
+      if (!(options.bot === 'medium' && trailer === 1)) {
+        const val = calculateEffectiveValue(
+          trailer,
+          trailerReactState.sel,
+          state.P[trailer].dice[picks[trailer].die!],
+          trailerReactState,
+          options
+        );
+        const reach = computeReach(trailer, val, trailerReactState, trackArray, options);
+        const reachKeys = Object.keys(reach).filter(
+          (k) => k !== `${state.P[trailer].pos}:${state.P[trailer].lane}`
+        );
+        if (reachKeys.length > 0) {
+          const innerKey = reachKeys.find((k) => k.endsWith(':0')) || reachKeys[0];
+          const [tgPos, tgLane] = innerKey.split(':').map(Number);
+          trailerReactState.sel.tgt = { pos: tgPos, lane: tgLane };
+        }
+      }
+
       setGameState(trailerReactState);
 
       // If Bot is trailer, trigger its reaction after small delay
@@ -575,13 +527,12 @@ export default function App() {
             if (result.winIndex !== null) {
               return result.nextState;
             }
-            finishStep(result.nextState);
-            return result.nextState;
+            return computeStepFinishedState(result.nextState, options);
           });
         }, 700);
       }
     },
-    [options, executeMove, finishStep, trackArray]
+    [options, executeMove, trackArray]
   );
 
   // Lock In choice
@@ -657,8 +608,8 @@ export default function App() {
       setGameState(nextState);
       return;
     }
-    finishStep(nextState);
-  }, [gameState, executeMove, finishStep]);
+    setGameState(computeStepFinishedState(nextState, options));
+  }, [gameState, executeMove, options]);
 
   // Proceed to next step or next round
   const handleNextStep = useCallback(() => {
