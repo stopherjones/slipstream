@@ -10,6 +10,11 @@
 
 export type TrackSectionType = 'T' | 'S' | 'L' | 'R';
 
+export interface KerbSegment {
+  poly: string;
+  color: 'red' | 'white';
+}
+
 export interface RenderCell {
   idx: number;
   type: 'T' | 'S' | 'C';
@@ -22,6 +27,7 @@ export interface RenderCell {
   angle: number; // Tangent angle in degrees for vehicle rotation
   kerbPoly?: string;
   kerbSide?: 'left' | 'right';
+  kerbSegments?: KerbSegment[];
   dividerLine?: { x1: number; y1: number; x2: number; y2: number };
 }
 
@@ -316,7 +322,7 @@ export function computeSectionTrackGeometry(
       const T1x = Math.cos(eHead) * M;
       const T1y = Math.sin(eHead) * M;
 
-      const STEPS = 5;
+      const STEPS = 8;
       const ptsLeft: [number, number][] = [];
       const ptsCenter: [number, number][] = [];
       const ptsRight: [number, number][] = [];
@@ -359,12 +365,11 @@ export function computeSectionTrackGeometry(
         ptsCenter.push([px, py]);
         ptsRight.push([px + nRx * W, py + nRy * W]);
 
+        // Kerb extends 5.5 units into the inside apex
         if (isLeft) {
-          // Kerb is on inside apex (Left side)
-          ptsKerb.push([px + nLx * (W + 5), py + nLy * (W + 5)]);
+          ptsKerb.push([px + nLx * (W + 5.5), py + nLy * (W + 5.5)]);
         } else {
-          // Kerb is on inside apex (Right side)
-          ptsKerb.push([px + nRx * (W + 5), py + nRy * (W + 5)]);
+          ptsKerb.push([px + nRx * (W + 5.5), py + nRy * (W + 5.5)]);
         }
       }
 
@@ -380,7 +385,7 @@ export function computeSectionTrackGeometry(
         .concat([...ptsRight].reverse().map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`))
         .join(' ');
 
-      // Kerb polygon
+      // Full Kerb outline polygon (fallback)
       let kerbPoly = '';
       if (isLeft) {
         kerbPoly = ptsKerb
@@ -394,7 +399,23 @@ export function computeSectionTrackGeometry(
           .join(' ');
       }
 
-      // Midpoint centers for car placement (sampled around mid step s = 2, 3)
+      // Radial Kerb Segments: each tooth connects the road edge to the kerb edge along
+      // the normal vectors, pointing DIRECTLY RADIALLY INTO THE CORNER APEX at every angle!
+      const kerbSegments: KerbSegment[] = [];
+      for (let s = 0; s < STEPS; s++) {
+        const roadA = isLeft ? ptsLeft[s] : ptsRight[s];
+        const roadB = isLeft ? ptsLeft[s + 1] : ptsRight[s + 1];
+        const kerbB = ptsKerb[s + 1];
+        const kerbA = ptsKerb[s];
+
+        const poly = `${roadA[0].toFixed(1)},${roadA[1].toFixed(1)} ${roadB[0].toFixed(1)},${roadB[1].toFixed(1)} ${kerbB[0].toFixed(1)},${kerbB[1].toFixed(1)} ${kerbA[0].toFixed(1)},${kerbA[1].toFixed(1)}`;
+        kerbSegments.push({
+          poly,
+          color: s % 2 === 0 ? 'red' : 'white',
+        });
+      }
+
+      // Midpoint centers for car placement (sampled around mid step s = 3, 4)
       const midIdx = Math.floor(STEPS / 2);
       const c0: [number, number] = [
         (ptsLeft[midIdx][0] + ptsCenter[midIdx][0]) / 2,
@@ -417,6 +438,7 @@ export function computeSectionTrackGeometry(
         angle: avgHeadDeg,
         kerbPoly,
         kerbSide: isLeft ? 'left' : 'right',
+        kerbSegments,
       });
     }
   }

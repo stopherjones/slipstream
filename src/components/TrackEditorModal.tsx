@@ -495,15 +495,27 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
 
                     return (
                       <g key={`cell-${cell.idx}`}>
-                        {/* Apex Kerb */}
-                        {cell.kerbPoly && (
+                        {/* Apex Kerb with radial teeth pointing into corner */}
+                        {cell.kerbSegments && cell.kerbSegments.length > 0 ? (
+                          <g key={`kerb-group-${cell.idx}`}>
+                            {cell.kerbSegments.map((seg, sIdx) => (
+                              <polygon
+                                key={`kerb-tooth-${cell.idx}-${sIdx}`}
+                                points={seg.poly}
+                                fill={seg.color === 'red' ? '#dc2626' : '#ffffff'}
+                                stroke="#991b1b"
+                                strokeWidth="0.3"
+                              />
+                            ))}
+                          </g>
+                        ) : cell.kerbPoly ? (
                           <polygon
                             points={cell.kerbPoly}
-                            fill="url(#architectKerb)"
-                            stroke="#b91c1c"
-                            strokeWidth="0.5"
+                            fill="#dc2626"
+                            stroke="#991b1b"
+                            strokeWidth="0.4"
                           />
-                        )}
+                        ) : null}
 
                         {/* Lane 0 */}
                         <polygon

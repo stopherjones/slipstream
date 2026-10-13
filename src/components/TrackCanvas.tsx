@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import {
   GameOptions,
   GameState,
@@ -15,6 +15,8 @@ import {
 } from '../game/geometry';
 import { computeSectionTrackGeometry } from '../game/sectionGeometry';
 import { getJumpTarget, getPassTarget } from '../game/engine';
+import { CarToken } from './CarToken';
+import { Maximize2, ZoomIn, ZoomOut, Target } from 'lucide-react';
 
 interface TrackCanvasProps {
   track: TrackDefinition;
@@ -36,12 +38,42 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
   options,
   reach,
   selectedTarget,
-  editorMode,
+  editorMode: _editorMode,
   onSelectTarget,
-  onToggleCellEditor,
+  onToggleCellEditor: _onToggleCellEditor,
   onOpenTrackSelector,
 }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // -------------------------------------------------------------
+  // VIEWPORT ZOOM & PAN STATE
+  // -------------------------------------------------------------
+  const [zoom, setZoom] = useState<number>(1);
+  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [focusMode, setFocusMode] = useState<'all' | 'p1' | 'p2' | 'custom'>('all');
+
+  const isDraggingRef = useRef<boolean>(false);
+  const dragStartRef = useRef<{
+    x: number;
+    y: number;
+    panX: number;
+    panY: number;
+  } | null>(null);
+  const touchStartRef = useRef<{
+    dist: number;
+    pan: { x: number; y: number };
+    zoom: number;
+    mid: { x: number; y: number };
+  } | null>(null);
+
   const isSectionTrack = Boolean(track.sections && track.sections.length > 0);
+
+  // Reset zoom & pan when track switches
+  useEffect(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setFocusMode('all');
+  }, [track.id]);
 
   // Compute section geometry if track has sections
   const sectionGeo = useMemo(() => {
@@ -91,116 +123,325 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
     return map;
   }, [reach, NC]);
 
-  // Render Formula Car token
-  const renderFormulaCar = (
-    cx: number,
-    cy: number,
-    angle: number,
-    playerIdx: number,
-    isLeader: boolean
-  ) => {
-    const isP1 = playerIdx === 0;
-    const bodyColor = isP1 ? '#2563eb' : '#ea580c';
-    const accentColor = isP1 ? '#60a5fa' : '#fb923c';
+  // Centers of viewport in track coordinates
+  const centerX = useMemo(() => {
+    if (sectionGeo) return (sectionGeo.minX + sectionGeo.maxX) / 2;
+    if (trackGeo) return trackGeo.xL + (trackGeo.xR - trackGeo.xL) / 2;
+    return 0;
+  }, [sectionGeo, trackGeo]);
 
-    return (
-      <g
-        key={`car-token-p${playerIdx}`}
-        transform={`translate(${cx.toFixed(1)}, ${cy.toFixed(1)}) rotate(${angle.toFixed(1)})`}
-        className="transition-all duration-300 ease-out pointer-events-none drop-shadow-lg"
-      >
-        {/* Aerodynamic rear wing */}
-        <polygon points="-8,-6 -6,-6 -6,6 -8,6" fill="#0f172a" />
-        <rect x="-8.5" y="-5.5" width="2" height="11" rx="0.5" fill={bodyColor} />
+  const centerY = useMemo(() => {
+    if (sectionGeo) return (sectionGeo.minY + sectionGeo.maxY) / 2;
+    if (trackGeo) return trackGeo.yT + (trackGeo.yB - trackGeo.yT) / 2;
+    return 0;
+  }, [sectionGeo, trackGeo]);
 
-        {/* Rear Wheels */}
-        <rect x="-7" y="-7.5" width="4" height="2.5" rx="0.8" fill="#1e293b" />
-        <rect x="-7" y="5" width="4" height="2.5" rx="0.8" fill="#1e293b" />
+  const viewBoxWidth = useMemo(() => {
+    if (sectionGeo) return sectionGeo.width + 48;
+    if (trackGeo) return trackGeo.W + 24;
+    return 300;
+  }, [sectionGeo, trackGeo]);
 
-        {/* Chassis body */}
-        <path
-          d="M -7 -3.5 L 4 -3.5 L 9 -1.2 L 9 1.2 L 4 3.5 L -7 3.5 Z"
-          fill={bodyColor}
-          stroke="#0f172a"
-          strokeWidth="0.7"
-        />
+  // Helper: get world coordinates of player's car
+  const getCarCoords = useCallback((playerIdx: number): [number, number] | null => {
+    const p = gameState.P[playerIdx];
+    if (!p) return null;
+    const pos = p.pos % NC;
+    if (sectionGeo) {
+      const cell = sectionGeo.cells[pos];
+      if (!cell) return null;
+      return p.lane === 0 ? cell.center0 : cell.center1;
+    }
+    if (trackGeo) {
+      const cell = trackGeo.cells[pos];
+      if (!cell) return null;
+      const mid = (cell.t1 + cell.t2) / 2;
+      return at(cell.g, mid, p.lane === 0 ? -LANE_WIDTH / 2 : LANE_WIDTH / 2);
+    }
+    return null;
+  }, [gameState.P, NC, sectionGeo, trackGeo]);
 
-        {/* Sidepod styling line */}
-        <line
-          x1="-4"
-          y1="0"
-          x2="4"
-          y2="0"
-          stroke={accentColor}
-          strokeWidth="0.8"
-          strokeDasharray="2 1"
-        />
+  // Auto-follow car if currently snapped to P1 or P2
+  useEffect(() => {
+    if (focusMode === 'p1') {
+      const coords = getCarCoords(0);
+      if (coords) {
+        setPan({
+          x: (centerX - coords[0]) * zoom,
+          y: (centerY - coords[1]) * zoom,
+        });
+      }
+    } else if (focusMode === 'p2') {
+      const coords = getCarCoords(1);
+      if (coords) {
+        setPan({
+          x: (centerX - coords[0]) * zoom,
+          y: (centerY - coords[1]) * zoom,
+        });
+      }
+    }
+  }, [
+    gameState.P[0].pos,
+    gameState.P[0].lane,
+    gameState.P[1].pos,
+    gameState.P[1].lane,
+    focusMode,
+    zoom,
+    centerX,
+    centerY,
+    getCarCoords,
+  ]);
 
-        {/* Front Wing */}
-        <polygon points="8.5,-6.5 10,-6.5 10.5,6.5 9,6.5" fill="#0f172a" />
-        <path d="M 6 -1.8 L 10 0 L 6 1.8 Z" fill={accentColor} />
+  // Zoom / Snap Action Handlers
+  const handleFitTrack = useCallback(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setFocusMode('all');
+  }, []);
 
-        {/* Front Wheels */}
-        <rect x="4.5" y="-7" width="3.5" height="2.2" rx="0.8" fill="#1e293b" />
-        <rect x="4.5" y="4.8" width="3.5" height="2.2" rx="0.8" fill="#1e293b" />
+  const handleSnapToCar = useCallback((playerIdx: 0 | 1) => {
+    const coords = getCarCoords(playerIdx);
+    if (!coords) return;
+    const targetZoom = 2.4;
+    setZoom(targetZoom);
+    setPan({
+      x: (centerX - coords[0]) * targetZoom,
+      y: (centerY - coords[1]) * targetZoom,
+    });
+    setFocusMode(playerIdx === 0 ? 'p1' : 'p2');
+  }, [getCarCoords, centerX, centerY]);
 
-        {/* Cockpit & Helmet */}
-        <ellipse cx="0" cy="0" rx="2.2" ry="1.5" fill="#020617" />
-        <circle cx="0.5" cy="0" r="1.3" fill="#f8fafc" />
+  const handleZoomIn = useCallback(() => {
+    setZoom((z) => Math.min(Number((z * 1.25).toFixed(2)), 4.0));
+    setFocusMode('custom');
+  }, []);
 
-        {/* Player Number Badge */}
-        <text
-          x="-3"
-          y="0"
-          dy=".35em"
-          textAnchor="middle"
-          fontSize="4.5"
-          fontWeight="bold"
-          fill="#ffffff"
-          fontFamily="system-ui"
-        >
-          {playerIdx + 1}
-        </text>
+  const handleZoomOut = useCallback(() => {
+    setZoom((z) => Math.max(Number((z * 0.8).toFixed(2)), 0.6));
+    setFocusMode('custom');
+  }, []);
 
-        {/* Golden Leader Crown */}
-        {isLeader && (
-          <polygon
-            points="0,-5.5 -2.5,-3 2.5,-3"
-            fill="#facc15"
-            stroke="#b45309"
-            strokeWidth="0.4"
-          />
-        )}
-      </g>
-    );
+  // -------------------------------------------------------------
+  // GESTURE HANDLERS (WHEEL, TOUCH PINCH, POINTER DRAG)
+  // -------------------------------------------------------------
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const onWheelHandler = (e: WheelEvent) => {
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.15 : 0.87;
+      setZoom((prevZoom) => {
+        const nextZoom = Math.min(Math.max(prevZoom * factor, 0.6), 4.0);
+        return Number(nextZoom.toFixed(2));
+      });
+      setFocusMode('custom');
+    };
+
+    container.addEventListener('wheel', onWheelHandler, { passive: false });
+    return () => {
+      container.removeEventListener('wheel', onWheelHandler);
+    };
+  }, []);
+
+  // Pointer drag to pan
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    dragStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      panX: pan.x,
+      panY: pan.y,
+    };
+    isDraggingRef.current = false;
   };
 
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!dragStartRef.current) return;
+    const dx = e.clientX - dragStartRef.current.x;
+    const dy = e.clientY - dragStartRef.current.y;
+    if (Math.hypot(dx, dy) > 5) {
+      isDraggingRef.current = true;
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const scaleRatio = viewBoxWidth / rect.width;
+        setPan({
+          x: dragStartRef.current.panX + dx * scaleRatio,
+          y: dragStartRef.current.panY + dy * scaleRatio,
+        });
+        setFocusMode('custom');
+      }
+    }
+  };
+
+  const handlePointerUp = () => {
+    dragStartRef.current = null;
+    setTimeout(() => {
+      isDraggingRef.current = false;
+    }, 60);
+  };
+
+  // Touch pinch-to-zoom
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      const mid = {
+        x: (t1.clientX + t2.clientX) / 2,
+        y: (t1.clientY + t2.clientY) / 2,
+      };
+      touchStartRef.current = { dist, pan: { ...pan }, zoom, mid };
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && touchStartRef.current) {
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      const newDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      const factor = newDist / touchStartRef.current.dist;
+      const newZoom = Math.min(Math.max(touchStartRef.current.zoom * factor, 0.6), 4.0);
+      setZoom(Number(newZoom.toFixed(2)));
+
+      const newMid = {
+        x: (t1.clientX + t2.clientX) / 2,
+        y: (t1.clientY + t2.clientY) / 2,
+      };
+      const dx = newMid.x - touchStartRef.current.mid.x;
+      const dy = newMid.y - touchStartRef.current.mid.y;
+
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const scaleRatio = viewBoxWidth / rect.width;
+        setPan({
+          x: touchStartRef.current.pan.x + dx * scaleRatio,
+          y: touchStartRef.current.pan.y + dy * scaleRatio,
+        });
+      }
+      setFocusMode('custom');
+    }
+  };
+
+  const handleTouchEnd = () => {
+    touchStartRef.current = null;
+  };
+
+  // Safe selection handler that ignores drag operations
+  const handleSafeSelect = (targetPos: number, targetLane: number) => {
+    if (isDraggingRef.current) return;
+    onSelectTarget(targetPos, targetLane);
+  };
+
+  // Shared Toolbar Controls
+  const renderZoomToolbar = () => (
+    <div
+      className="absolute top-2 right-2 sm:top-3 sm:right-3 z-30 flex items-center gap-1 sm:gap-1.5 bg-stone-900/90 backdrop-blur-md border border-stone-700/80 rounded-full px-2 py-1 shadow-2xl select-none"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {/* Fit Track Button */}
+      <button
+        type="button"
+        onClick={handleFitTrack}
+        title="Fill viewport with entire track (100%)"
+        className={`flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-semibold transition-all ${
+          focusMode === 'all' && zoom === 1
+            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
+            : 'text-stone-300 hover:text-white hover:bg-stone-800'
+        }`}
+      >
+        <Maximize2 className="w-3.5 h-3.5" />
+        <span className="hidden xs:inline">Fit</span>
+      </button>
+
+      {/* Snap to Car 1 (Blue Hatchback) */}
+      <button
+        type="button"
+        onClick={() => handleSnapToCar(0)}
+        title="Snap to Player 1 (Blue Hatchback)"
+        className={`flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-semibold transition-all ${
+          focusMode === 'p1'
+            ? 'bg-blue-600/30 text-blue-300 border border-blue-400 shadow-sm shadow-blue-500/20'
+            : 'text-stone-300 hover:text-blue-300 hover:bg-stone-800'
+        }`}
+      >
+        <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block shadow-sm ring-1 ring-blue-300" />
+        <span className="hidden sm:inline">P1</span>
+      </button>
+
+      {/* Snap to Car 2 (Red Saloon) */}
+      <button
+        type="button"
+        onClick={() => handleSnapToCar(1)}
+        title={`Snap to ${options.bot === 'medium' ? 'AI Bot' : 'Player 2'} (Red Saloon)`}
+        className={`flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-semibold transition-all ${
+          focusMode === 'p2'
+            ? 'bg-rose-600/30 text-rose-300 border border-rose-400 shadow-sm shadow-rose-500/20'
+            : 'text-stone-300 hover:text-rose-300 hover:bg-stone-800'
+        }`}
+      >
+        <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block shadow-sm ring-1 ring-rose-300" />
+        <span className="hidden sm:inline">{options.bot === 'medium' ? 'Bot' : 'P2'}</span>
+      </button>
+
+      {/* Vertical separator */}
+      <div className="w-[1px] h-3.5 bg-stone-700 mx-0.5" />
+
+      {/* Zoom Out Button */}
+      <button
+        type="button"
+        onClick={handleZoomOut}
+        title="Zoom Out (−)"
+        className="p-1 rounded-full text-stone-300 hover:text-white hover:bg-stone-800 active:scale-95 transition-all"
+      >
+        <ZoomOut className="w-3.5 h-3.5" />
+      </button>
+
+      {/* Zoom Percent Badge */}
+      <button
+        type="button"
+        onClick={handleFitTrack}
+        title="Reset zoom to 100%"
+        className="font-mono text-[10px] font-bold text-stone-400 hover:text-amber-300 px-1 py-0.5 rounded transition-colors"
+      >
+        {Math.round(zoom * 100)}%
+      </button>
+
+      {/* Zoom In Button */}
+      <button
+        type="button"
+        onClick={handleZoomIn}
+        title="Zoom In (+)"
+        className="p-1 rounded-full text-stone-300 hover:text-white hover:bg-stone-800 active:scale-95 transition-all"
+      >
+        <ZoomIn className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+
   // -------------------------------------------------------------
-  // SECTION-BASED TRACK RENDERING
+  // 1. SECTION-BASED TRACK RENDERING
   // -------------------------------------------------------------
   if (sectionGeo) {
-    const centerX = (sectionGeo.minX + sectionGeo.maxX) / 2;
-    const centerY = (sectionGeo.minY + sectionGeo.maxY) / 2;
-
     return (
-      <div className="w-full h-full flex items-center justify-center p-1 sm:p-2 select-none overflow-hidden touch-manipulation">
+      <div
+        ref={containerRef}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        className="w-full h-full relative flex items-center justify-center p-1 sm:p-2 select-none overflow-hidden touch-none cursor-grab active:cursor-grabbing"
+      >
+        {renderZoomToolbar()}
+
         <svg
           viewBox={sectionGeo.viewBox}
-          className="w-full h-full max-h-[46vh] sm:max-h-[50vh] drop-shadow-2xl"
+          className="w-full h-full max-h-[48vh] sm:max-h-[52vh] drop-shadow-2xl"
           style={{ filter: 'drop-shadow(0 12px 24px rgba(0,0,0,0.5))' }}
         >
           <defs>
-            <pattern
-              id="curbRedWhite"
-              width="8"
-              height="8"
-              patternUnits="userSpaceOnUse"
-              patternTransform="rotate(45)"
-            >
-              <rect width="4" height="8" fill="#ef4444" />
-              <rect x="4" width="4" height="8" fill="#ffffff" />
-            </pattern>
-
             <pattern
               id="cornerCostHatch"
               width="7"
@@ -225,38 +466,351 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
             </radialGradient>
           </defs>
 
-          {/* Infield Base Terrain */}
+          {/* Root Transform Group with Zoom & Pan */}
+          <g
+            transform={`translate(${(centerX + pan.x).toFixed(1)}, ${(centerY + pan.y).toFixed(1)}) scale(${zoom.toFixed(2)}) translate(${(-centerX).toFixed(1)}, ${(-centerY).toFixed(1)})`}
+            className="transition-transform duration-100 ease-out"
+          >
+            {/* Infield Base Terrain */}
+            <rect
+              x={sectionGeo.minX - 16}
+              y={sectionGeo.minY - 16}
+              width={sectionGeo.width + 32}
+              height={sectionGeo.height + 32}
+              rx={24}
+              fill="url(#circuitBackdrop)"
+              stroke="#1e293b"
+              strokeWidth="1.5"
+            />
+
+            {/* Center Watermark & Quick Switcher */}
+            <g
+              transform={`translate(${centerX.toFixed(1)}, ${centerY.toFixed(1)})`}
+              onClick={onOpenTrackSelector}
+              className="cursor-pointer group"
+            >
+              <rect
+                x="-80"
+                y="-22"
+                width="160"
+                height="44"
+                rx="22"
+                fill="rgba(15, 23, 42, 0.75)"
+                stroke="rgba(245, 158, 11, 0.3)"
+                strokeWidth="1"
+                className="group-hover:stroke-amber-400 group-hover:fill-slate-900 transition-all"
+              />
+              <text
+                x="0"
+                y="-4"
+                textAnchor="middle"
+                className="font-extrabold tracking-wider text-[11px] uppercase select-none font-sans fill-stone-100 group-hover:fill-amber-300 transition-colors"
+              >
+                {track.name}
+              </text>
+              <text
+                x="0"
+                y="11"
+                textAnchor="middle"
+                className="font-mono text-[8px] tracking-wider select-none uppercase fill-amber-400 font-semibold group-hover:underline"
+              >
+                ↺ {track.country} · {NC} SPACES
+              </text>
+            </g>
+
+            {/* Render Section Cells */}
+            {sectionGeo.cells.map((cell) => {
+              const isBottleneck = cell.type === 'S';
+              const isCorner = cell.type === 'C';
+              const lanesList = isBottleneck ? [0] : [0, 1];
+
+              return (
+                <g key={`sec-cell-${cell.idx}`}>
+                  {/* Apex Kerb with radial teeth pointing directly into the corner apex */}
+                  {cell.kerbSegments && cell.kerbSegments.length > 0 ? (
+                    <g key={`sec-kerb-${cell.idx}`}>
+                      {cell.kerbSegments.map((seg, sIdx) => (
+                        <polygon
+                          key={`sec-kerb-${cell.idx}-${sIdx}`}
+                          points={seg.poly}
+                          fill={seg.color === 'red' ? '#dc2626' : '#ffffff'}
+                          stroke="#991b1b"
+                          strokeWidth="0.3"
+                        />
+                      ))}
+                    </g>
+                  ) : null}
+
+                  {/* Lanes */}
+                  {lanesList.map((lane) => {
+                    const pts = lane === 0 ? cell.poly0 : cell.poly1;
+                    const [cx, cy] = lane === 0 ? cell.center0 : cell.center1;
+                    const isOutsideCorner = isCorner && cell.outsideLane === lane;
+
+                    const lookupKey = `${cell.idx}:${lane}`;
+                    const hm = reachMapLookup[lookupKey];
+                    const isSelected =
+                      selectedTarget &&
+                      selectedTarget.pos === hm?.n &&
+                      selectedTarget.lane === lane;
+
+                    const carsHere = gameState.P.map((p, q) =>
+                      p.pos % NC === cell.idx && (isBottleneck || p.lane === lane) ? q : -1
+                    ).filter((q) => q >= 0);
+
+                    return (
+                      <g key={`sec-cell-${cell.idx}-lane-${lane}`}>
+                        {/* Road surface */}
+                        <polygon
+                          points={pts}
+                          fill={
+                            isOutsideCorner
+                              ? 'url(#cornerCostHatch)'
+                              : isBottleneck
+                              ? '#3f2f21'
+                              : '#1a1f28'
+                          }
+                          stroke={isBottleneck ? '#854d0e' : '#334155'}
+                          strokeWidth={isBottleneck ? 1.2 : 0.7}
+                        />
+
+                        {/* Divider line on straight */}
+                        {cell.dividerLine && lane === 0 && !isBottleneck && (
+                          <line
+                            x1={cell.dividerLine.x1}
+                            y1={cell.dividerLine.y1}
+                            x2={cell.dividerLine.x2}
+                            y2={cell.dividerLine.y2}
+                            stroke="#ffffff"
+                            strokeWidth="0.8"
+                            strokeDasharray="4 3"
+                            opacity={0.4}
+                          />
+                        )}
+
+                        {/* Corner Cost Pip Badge */}
+                        {isOutsideCorner && (
+                          <g>
+                            <circle cx={cx} cy={cy} r="3.5" fill="#dc2626" stroke="#ffffff" strokeWidth="0.5" />
+                            <text
+                              x={cx}
+                              y={cy}
+                              dy=".32em"
+                              textAnchor="middle"
+                              fontSize="3"
+                              fontWeight="bold"
+                              fill="#ffffff"
+                              fontFamily="monospace"
+                            >
+                              2
+                            </text>
+                          </g>
+                        )}
+
+                        {/* Reach Target overlay highlight */}
+                        {hm && (
+                          <g
+                            onClick={() => handleSafeSelect(hm.n, lane)}
+                            className="cursor-pointer group"
+                          >
+                            <polygon
+                              points={pts}
+                              fill={
+                                isSelected
+                                  ? 'rgba(234, 179, 8, 0.55)'
+                                  : 'rgba(255, 255, 255, 0.32)'
+                              }
+                              stroke={isSelected ? '#fbbf24' : '#ffffff'}
+                              strokeWidth={isSelected ? 2.5 : 1.4}
+                              strokeDasharray={isSelected ? undefined : '4 2'}
+                              className="transition-all hover:fill-amber-300/40"
+                            />
+                            {carsHere.length === 0 && (
+                              <text
+                                x={cx.toFixed(1)}
+                                y={cy.toFixed(1)}
+                                dy=".35em"
+                                textAnchor="middle"
+                                className="font-bold text-[10px] pointer-events-none"
+                                fill="#ffffff"
+                                style={{
+                                  paintOrder: 'stroke',
+                                  stroke: '#0b0f15',
+                                  strokeWidth: '2.5px',
+                                }}
+                              >
+                                {getJumpTarget(
+                                  activePlayerIdx,
+                                  currentDie,
+                                  hm.n,
+                                  gameState,
+                                  trackArray,
+                                  options
+                                )
+                                  ? '★'
+                                  : getPassTarget(
+                                      activePlayerIdx,
+                                      hm.n,
+                                      gameState,
+                                      trackArray,
+                                      options
+                                    )
+                                  ? '➜'
+                                  : ''}
+                                {isSelected ? '✓' : hm.c}
+                              </text>
+                            )}
+                          </g>
+                        )}
+
+                        {/* Render Attached Car SVGs (Blue Hatchback for P1, Red Saloon for P2) */}
+                        {carsHere.map((q) => (
+                          <CarToken
+                            key={`car-token-${cell.idx}-${lane}-p${q}`}
+                            cx={cx}
+                            cy={cy}
+                            angle={cell.angle}
+                            playerIdx={q}
+                            isLeader={gameState.lead === q}
+                          />
+                        ))}
+                      </g>
+                    );
+                  })}
+                </g>
+              );
+            })}
+
+            {/* Checkered Start Line */}
+            <g>
+              <line
+                x1={sectionGeo.finishLine.x1}
+                y1={sectionGeo.finishLine.y1}
+                x2={sectionGeo.finishLine.x2}
+                y2={sectionGeo.finishLine.y2}
+                stroke="#0f172a"
+                strokeWidth="5"
+              />
+              <line
+                x1={sectionGeo.finishLine.x1}
+                y1={sectionGeo.finishLine.y1}
+                x2={sectionGeo.finishLine.x2}
+                y2={sectionGeo.finishLine.y2}
+                stroke="#ffffff"
+                strokeWidth="4"
+                strokeDasharray="2.5 2.5"
+              />
+            </g>
+
+            {/* Victory Banner */}
+            {gameState.win !== null && (
+              <g
+                transform={`translate(${centerX.toFixed(1)}, ${(centerY + 34).toFixed(1)})`}
+                className="select-none pointer-events-none animate-pulse"
+              >
+                <rect
+                  x="-110"
+                  y="-16"
+                  width="220"
+                  height="32"
+                  rx="16"
+                  fill="rgba(15, 23, 42, 0.95)"
+                  stroke="#fbbf24"
+                  strokeWidth="1.8"
+                  filter="drop-shadow(0 6px 16px rgba(245, 158, 11, 0.4))"
+                />
+                <text
+                  x="0"
+                  y="4"
+                  textAnchor="middle"
+                  className="font-black text-[12px] fill-amber-400 font-sans tracking-wide"
+                >
+                  🏁 {gameState.win === 0 ? 'PLAYER 1' : options.bot === 'medium' ? 'AI BOT' : 'PLAYER 2'} WINS! 🏆
+                </text>
+              </g>
+            )}
+          </g>
+        </svg>
+      </div>
+    );
+  }
+
+  // -------------------------------------------------------------
+  // 2. RECTILINEAR 9-SEGMENT TRACK RENDERING (Fallback)
+  // -------------------------------------------------------------
+  if (!trackGeo) return null;
+
+  const pad = 12;
+  const svgViewBox = `-${pad} -${pad} ${trackGeo.W + pad * 2} ${trackGeo.H + pad * 2}`;
+
+  return (
+    <div
+      ref={containerRef}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      className="w-full h-full relative flex items-center justify-center p-1 sm:p-2 select-none overflow-hidden touch-none cursor-grab active:cursor-grabbing"
+    >
+      {renderZoomToolbar()}
+
+      <svg
+        viewBox={svgViewBox}
+        className="w-full h-full max-h-[48vh] sm:max-h-[52vh] drop-shadow-2xl"
+        style={{ filter: 'drop-shadow(0 12px 24px rgba(0,0,0,0.5))' }}
+      >
+        <defs>
+          <pattern
+            id="cornerCostHatch"
+            width="7"
+            height="7"
+            patternUnits="userSpaceOnUse"
+            patternTransform="rotate(45)"
+          >
+            <rect width="7" height="7" fill="#1b2028" />
+            <rect width="3.5" height="7" fill="#dc2626" opacity="0.65" />
+          </pattern>
+        </defs>
+
+        {/* Root Transform Group with Zoom & Pan */}
+        <g
+          transform={`translate(${(centerX + pan.x).toFixed(1)}, ${(centerY + pan.y).toFixed(1)}) scale(${zoom.toFixed(2)}) translate(${(-centerX).toFixed(1)}, ${(-centerY).toFixed(1)})`}
+          className="transition-transform duration-100 ease-out"
+        >
+          {/* Base Infield */}
           <rect
-            x={sectionGeo.minX - 16}
-            y={sectionGeo.minY - 16}
-            width={sectionGeo.width + 32}
-            height={sectionGeo.height + 32}
-            rx={24}
-            fill="url(#circuitBackdrop)"
+            x={trackGeo.xL - 8}
+            y={trackGeo.yT - 8}
+            width={trackGeo.xR - trackGeo.xL + 16}
+            height={trackGeo.yB - trackGeo.yT + 16}
+            rx={20}
+            fill="#0f172a"
             stroke="#1e293b"
             strokeWidth="1.5"
           />
 
-          {/* Center Watermark & Quick Switcher */}
+          {/* Quick Track Switcher in Infield Center */}
           <g
             transform={`translate(${centerX.toFixed(1)}, ${centerY.toFixed(1)})`}
             onClick={onOpenTrackSelector}
             className="cursor-pointer group"
           >
             <rect
-              x="-80"
-              y="-22"
-              width="160"
-              height="44"
-              rx="22"
-              fill="rgba(15, 23, 42, 0.75)"
+              x="-75"
+              y="-20"
+              width="150"
+              height="40"
+              rx="20"
+              fill="rgba(15, 23, 42, 0.7)"
               stroke="rgba(245, 158, 11, 0.3)"
               strokeWidth="1"
               className="group-hover:stroke-amber-400 group-hover:fill-slate-900 transition-all"
             />
             <text
               x="0"
-              y="-4"
+              y="-3"
               textAnchor="middle"
               className="font-extrabold tracking-wider text-[11px] uppercase select-none font-sans fill-stone-100 group-hover:fill-amber-300 transition-colors"
             >
@@ -272,46 +826,75 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
             </text>
           </g>
 
-          {/* Render Section Cells */}
-          {sectionGeo.cells.map((cell) => {
-            const isBottleneck = cell.type === 'S';
-            const isCorner = cell.type === 'C';
+          {/* Track Cells */}
+          {trackGeo.cells.map((cell, idx) => {
+            const isBottleneck = cell.t === 'S';
+            const isCorner = cell.t === 'C';
+            const mid = (cell.t1 + cell.t2) / 2;
+            const headingAngle = tangentAngle(cell.g, mid);
 
-            // Lanes to iterate
-            const lanesList = isBottleneck ? [0] : [0, 1];
+            const lanes: [number, number, number, number][] = isBottleneck
+              ? [[0, -LANE_WIDTH, LANE_WIDTH, 0]]
+              : [
+                  [0, -LANE_WIDTH, 0, -LANE_WIDTH / 2],
+                  [1, 0, LANE_WIDTH, LANE_WIDTH / 2],
+                ];
+
+            // Radial Kerb Teeth: each tooth points directly into the corner apex along normal
+            const kerbTeeth = isCorner ? (() => {
+              const steps = 6;
+              const teeth: { poly: string; color: 'red' | 'white' }[] = [];
+              for (let s = 0; s < steps; s++) {
+                const ta = cell.t1 + (s / steps) * (cell.t2 - cell.t1);
+                const tb = cell.t1 + ((s + 1) / steps) * (cell.t2 - cell.t1);
+                const p1 = at(cell.g, ta, -LANE_WIDTH);
+                const p2 = at(cell.g, tb, -LANE_WIDTH);
+                const p3 = at(cell.g, tb, -LANE_WIDTH - 5.5);
+                const p4 = at(cell.g, ta, -LANE_WIDTH - 5.5);
+                teeth.push({
+                  poly: `${p1[0].toFixed(1)},${p1[1].toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)} ${p3[0].toFixed(1)},${p3[1].toFixed(1)} ${p4[0].toFixed(1)},${p4[1].toFixed(1)}`,
+                  color: (idx * steps + s) % 2 === 0 ? 'red' : 'white',
+                });
+              }
+              return teeth;
+            })() : null;
 
             return (
-              <g key={`sec-cell-${cell.idx}`}>
-                {/* Apex Kerb */}
-                {cell.kerbPoly && (
-                  <polygon
-                    points={cell.kerbPoly}
-                    fill="url(#curbRedWhite)"
-                    stroke="#b91c1c"
-                    strokeWidth="0.5"
-                  />
+              <g key={`cell-${idx}`}>
+                {/* Radial teeth pointing into the corner apex */}
+                {kerbTeeth && (
+                  <g key={`rect-kerb-${idx}`}>
+                    {kerbTeeth.map((t, sIdx) => (
+                      <polygon
+                        key={`rect-kerb-tooth-${idx}-${sIdx}`}
+                        points={t.poly}
+                        fill={t.color === 'red' ? '#dc2626' : '#ffffff'}
+                        stroke="#991b1b"
+                        strokeWidth="0.3"
+                      />
+                    ))}
+                  </g>
                 )}
 
-                {/* Lanes */}
-                {lanesList.map((lane) => {
-                  const pts = lane === 0 ? cell.poly0 : cell.poly1;
-                  const [cx, cy] = lane === 0 ? cell.center0 : cell.center1;
-                  const isOutsideCorner = isCorner && cell.outsideLane === lane;
-
-                  const lookupKey = `${cell.idx}:${lane}`;
+                {lanes.map(([lane, o1, o2, oc]) => {
+                  const pts = computePolygonPoints(cell.g, cell.t1, cell.t2, o1, o2);
+                  const lookupKey = `${idx}:${lane}`;
                   const hm = reachMapLookup[lookupKey];
                   const isSelected =
                     selectedTarget &&
                     selectedTarget.pos === hm?.n &&
                     selectedTarget.lane === lane;
 
+                  const [cx, cy] = at(cell.g, mid, oc);
+
                   const carsHere = gameState.P.map((p, q) =>
-                    p.pos % NC === cell.idx && (isBottleneck || p.lane === lane) ? q : -1
+                    p.pos % NC === idx && (isBottleneck || p.lane === lane) ? q : -1
                   ).filter((q) => q >= 0);
 
+                  const isOutsideCorner = isCorner && lane === 1;
+
                   return (
-                    <g key={`sec-cell-${cell.idx}-lane-${lane}`}>
-                      {/* Road surface */}
+                    <g key={`seg-${idx}-${lane}`}>
                       <polygon
                         points={pts}
                         fill={
@@ -325,13 +908,12 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
                         strokeWidth={isBottleneck ? 1.2 : 0.7}
                       />
 
-                      {/* Divider line on straight */}
-                      {cell.dividerLine && lane === 0 && !isBottleneck && (
+                      {!isBottleneck && lane === 0 && (
                         <line
-                          x1={cell.dividerLine.x1}
-                          y1={cell.dividerLine.y1}
-                          x2={cell.dividerLine.x2}
-                          y2={cell.dividerLine.y2}
+                          x1={at(cell.g, cell.t1, 0)[0].toFixed(1)}
+                          y1={at(cell.g, cell.t1, 0)[1].toFixed(1)}
+                          x2={at(cell.g, cell.t2, 0)[0].toFixed(1)}
+                          y2={at(cell.g, cell.t2, 0)[1].toFixed(1)}
                           stroke="#ffffff"
                           strokeWidth="0.8"
                           strokeDasharray="4 3"
@@ -361,7 +943,7 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
                       {/* Reach Target overlay highlight */}
                       {hm && (
                         <g
-                          onClick={() => onSelectTarget(hm.n, lane)}
+                          onClick={() => handleSafeSelect(hm.n, lane)}
                           className="cursor-pointer group"
                         >
                           <polygon
@@ -414,45 +996,67 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
                         </g>
                       )}
 
-                      {/* Render Cars */}
-                      {carsHere.map((q) =>
-                        renderFormulaCar(
-                          cx,
-                          cy,
-                          cell.angle,
-                          q,
-                          gameState.lead === q
-                        )
-                      )}
+                      {/* Render Attached Car SVGs */}
+                      {carsHere.map((q) => (
+                        <CarToken
+                          key={`car-token-rect-${idx}-${lane}-p${q}`}
+                          cx={cx}
+                          cy={cy}
+                          angle={headingAngle}
+                          playerIdx={q}
+                          isLeader={gameState.lead === q}
+                        />
+                      ))}
                     </g>
                   );
                 })}
+
+                {(idx % 5 === 0 || idx === NC - 1) && (
+                  <text
+                    x={at(cell.g, mid, LANE_WIDTH + 8)[0].toFixed(1)}
+                    y={at(cell.g, mid, LANE_WIDTH + 8)[1].toFixed(1)}
+                    dy=".35em"
+                    textAnchor="middle"
+                    className="font-mono text-[7.5px] select-none pointer-events-none font-bold"
+                    fill="#64748b"
+                    opacity={0.8}
+                  >
+                    {idx === 0 ? 'START' : idx}
+                  </text>
+                )}
               </g>
             );
           })}
 
-          {/* Checkered Start Line */}
-          <g>
+          <g key="start-finish-gantry">
             <line
-              x1={sectionGeo.finishLine.x1}
-              y1={sectionGeo.finishLine.y1}
-              x2={sectionGeo.finishLine.x2}
-              y2={sectionGeo.finishLine.y2}
+              x1={trackGeo.xs}
+              y1={trackGeo.yB - LANE_WIDTH}
+              x2={trackGeo.xs}
+              y2={trackGeo.yB + LANE_WIDTH}
               stroke="#0f172a"
               strokeWidth="5"
             />
             <line
-              x1={sectionGeo.finishLine.x1}
-              y1={sectionGeo.finishLine.y1}
-              x2={sectionGeo.finishLine.x2}
-              y2={sectionGeo.finishLine.y2}
+              x1={trackGeo.xs}
+              y1={trackGeo.yB - LANE_WIDTH}
+              x2={trackGeo.xs}
+              y2={trackGeo.yB + LANE_WIDTH}
               stroke="#ffffff"
               strokeWidth="4"
               strokeDasharray="2.5 2.5"
             />
+            <text
+              x={trackGeo.xs}
+              y={trackGeo.yB - LANE_WIDTH - 6}
+              textAnchor="middle"
+              className="font-mono text-[7px] font-extrabold fill-amber-400 select-none pointer-events-none tracking-widest uppercase"
+              style={{ paintOrder: 'stroke', stroke: '#0b0f15', strokeWidth: '2px' }}
+            >
+              FINISH 🏁 START
+            </text>
           </g>
 
-          {/* Victory Banner */}
           {gameState.win !== null && (
             <g
               transform={`translate(${centerX.toFixed(1)}, ${(centerY + 34).toFixed(1)})`}
@@ -479,342 +1083,7 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
               </text>
             </g>
           )}
-        </svg>
-      </div>
-    );
-  }
-
-  // -------------------------------------------------------------
-  // RECTILINEAR 9-SEGMENT TRACK RENDERING (Fallback)
-  // -------------------------------------------------------------
-  if (!trackGeo) return null;
-
-  const pad = 12;
-  const svgViewBox = `-${pad} -${pad} ${trackGeo.W + pad * 2} ${trackGeo.H + pad * 2}`;
-  const centerX = trackGeo.xL + (trackGeo.xR - trackGeo.xL) / 2;
-  const centerY = trackGeo.yT + (trackGeo.yB - trackGeo.yT) / 2;
-
-  return (
-    <div className="w-full h-full flex items-center justify-center p-1 sm:p-2 select-none overflow-hidden touch-manipulation">
-      <svg
-        viewBox={svgViewBox}
-        className="w-full h-full max-h-[46vh] sm:max-h-[50vh] drop-shadow-2xl"
-        style={{ filter: 'drop-shadow(0 12px 24px rgba(0,0,0,0.5))' }}
-      >
-        <defs>
-          <pattern
-            id="curbRedWhite"
-            width="8"
-            height="8"
-            patternUnits="userSpaceOnUse"
-            patternTransform="rotate(45)"
-          >
-            <rect width="4" height="8" fill="#ef4444" />
-            <rect x="4" width="4" height="8" fill="#ffffff" />
-          </pattern>
-
-          <pattern
-            id="cornerCostHatch"
-            width="7"
-            height="7"
-            patternUnits="userSpaceOnUse"
-            patternTransform="rotate(45)"
-          >
-            <rect width="7" height="7" fill="#1b2028" />
-            <rect width="3.5" height="7" fill="#dc2626" opacity="0.65" />
-          </pattern>
-
-          <radialGradient id="circuitBackdrop" cx="50%" cy="50%" r="55%">
-            <stop offset="0%" stopColor="#141a22" />
-            <stop offset="100%" stopColor="#0b0f15" />
-          </radialGradient>
-        </defs>
-
-        <rect
-          x={trackGeo.xL - 8}
-          y={trackGeo.yT - 8}
-          width={trackGeo.xR - trackGeo.xL + 16}
-          height={trackGeo.yB - trackGeo.yT + 16}
-          rx={24}
-          fill="url(#circuitBackdrop)"
-          stroke="#1e293b"
-          strokeWidth="1.5"
-        />
-
-        <g
-          transform={`translate(${centerX.toFixed(1)}, ${centerY.toFixed(1)})`}
-          onClick={onOpenTrackSelector}
-          className="cursor-pointer group"
-        >
-          <rect
-            x="-80"
-            y="-22"
-            width="160"
-            height="44"
-            rx="22"
-            fill="rgba(15, 23, 42, 0.75)"
-            stroke="rgba(245, 158, 11, 0.3)"
-            strokeWidth="1"
-            className="group-hover:stroke-amber-400 group-hover:fill-slate-900 transition-all"
-          />
-          <text
-            x="0"
-            y="-4"
-            textAnchor="middle"
-            className="font-extrabold tracking-wider text-[11px] uppercase select-none font-sans fill-stone-100 group-hover:fill-amber-300 transition-colors"
-          >
-            {track.name}
-          </text>
-          <text
-            x="0"
-            y="11"
-            textAnchor="middle"
-            className="font-mono text-[8px] tracking-wider select-none uppercase fill-amber-400 font-semibold group-hover:underline"
-          >
-            ↺ {track.country} · {NC} SPACES
-          </text>
         </g>
-
-        {trackGeo.cells.map((cell, idx) => {
-          const t = cell.t;
-          const mid = (cell.t1 + cell.t2) / 2;
-          const isCorner = t === 'C';
-          const isBottleneck = t === 'S';
-
-          const lanes: [number, number, number, number][] =
-            isBottleneck
-              ? [[0, -LANE_WIDTH, LANE_WIDTH, 0]]
-              : [
-                  [0, 0, LANE_WIDTH, LANE_WIDTH / 2],
-                  [1, -LANE_WIDTH, 0, -LANE_WIDTH / 2],
-                ];
-
-          const headingAngle = tangentAngle(cell.g, mid);
-
-          const outerKerbPts = isCorner
-            ? computePolygonPoints(
-                cell.g,
-                cell.t1,
-                cell.t2,
-                -LANE_WIDTH,
-                -LANE_WIDTH - 6
-              )
-            : null;
-
-          return (
-            <g key={`cell-${idx}`}>
-              {outerKerbPts && (
-                <polygon
-                  points={outerKerbPts}
-                  fill="url(#curbRedWhite)"
-                  stroke="#b91c1c"
-                  strokeWidth="0.5"
-                />
-              )}
-
-              {lanes.map(([lane, o1, o2, oc]) => {
-                const pts = computePolygonPoints(cell.g, cell.t1, cell.t2, o1, o2);
-                const lookupKey = `${idx}:${lane}`;
-                const hm = reachMapLookup[lookupKey];
-                const isSelected =
-                  selectedTarget &&
-                  selectedTarget.pos === hm?.n &&
-                  selectedTarget.lane === lane;
-
-                const [cx, cy] = at(cell.g, mid, oc);
-
-                const carsHere = gameState.P.map((p, q) =>
-                  p.pos % NC === idx && (isBottleneck || p.lane === lane) ? q : -1
-                ).filter((q) => q >= 0);
-
-                const isOutsideCorner = isCorner && lane === 1;
-
-                return (
-                  <g key={`seg-${idx}-${lane}`}>
-                    <polygon
-                      points={pts}
-                      fill={
-                        isOutsideCorner
-                          ? 'url(#cornerCostHatch)'
-                          : isBottleneck
-                          ? '#3f2f21'
-                          : '#1a1f28'
-                      }
-                      stroke={isBottleneck ? '#854d0e' : '#334155'}
-                      strokeWidth={isBottleneck ? 1.2 : 0.7}
-                    />
-
-                    {!isBottleneck && lane === 0 && (
-                      <line
-                        x1={at(cell.g, cell.t1, 0)[0].toFixed(1)}
-                        y1={at(cell.g, cell.t1, 0)[1].toFixed(1)}
-                        x2={at(cell.g, cell.t2, 0)[0].toFixed(1)}
-                        y2={at(cell.g, cell.t2, 0)[1].toFixed(1)}
-                        stroke="#ffffff"
-                        strokeWidth="0.8"
-                        strokeDasharray="4 3"
-                        opacity={0.4}
-                      />
-                    )}
-
-                    {editorMode && !isCorner && idx > 0 && lane === 0 && (
-                      <polygon
-                        points={computePolygonPoints(
-                          cell.g,
-                          cell.t1,
-                          cell.t2,
-                          -LANE_WIDTH,
-                          LANE_WIDTH
-                        )}
-                        onClick={() => onToggleCellEditor?.(idx)}
-                        fill="rgba(245, 158, 11, 0.18)"
-                        stroke="#f59e0b"
-                        strokeWidth={1.5}
-                        strokeDasharray="3 2"
-                        className="cursor-pointer hover:fill-amber-400/35 transition-colors"
-                      />
-                    )}
-
-                    {hm && (
-                      <g
-                        onClick={() => onSelectTarget(hm.n, lane)}
-                        className="cursor-pointer group"
-                      >
-                        <polygon
-                          points={pts}
-                          fill={
-                            isSelected
-                              ? 'rgba(234, 179, 8, 0.55)'
-                              : 'rgba(255, 255, 255, 0.32)'
-                          }
-                          stroke={isSelected ? '#fbbf24' : '#ffffff'}
-                          strokeWidth={isSelected ? 2.5 : 1.4}
-                          strokeDasharray={isSelected ? undefined : '4 2'}
-                          className="transition-all hover:fill-amber-300/40"
-                        />
-                        {carsHere.length === 0 && (
-                          <text
-                            x={cx.toFixed(1)}
-                            y={cy.toFixed(1)}
-                            dy=".35em"
-                            textAnchor="middle"
-                            className="font-bold text-[10px] pointer-events-none"
-                            fill="#ffffff"
-                            style={{
-                              paintOrder: 'stroke',
-                              stroke: '#0b0f15',
-                              strokeWidth: '2.5px',
-                            }}
-                          >
-                            {getJumpTarget(
-                              activePlayerIdx,
-                              currentDie,
-                              hm.n,
-                              gameState,
-                              trackArray,
-                              options
-                            )
-                              ? '★'
-                              : getPassTarget(
-                                  activePlayerIdx,
-                                  hm.n,
-                                  gameState,
-                                  trackArray,
-                                  options
-                                )
-                              ? '➜'
-                              : ''}
-                            {isSelected ? '✓' : hm.c}
-                          </text>
-                        )}
-                      </g>
-                    )}
-
-                    {carsHere.map((q) =>
-                      renderFormulaCar(
-                        cx,
-                        cy,
-                        headingAngle,
-                        q,
-                        gameState.lead === q
-                      )
-                    )}
-                  </g>
-                );
-              })}
-
-              {(idx % 5 === 0 || idx === NC - 1) && (
-                <text
-                  x={at(cell.g, mid, LANE_WIDTH + 8)[0].toFixed(1)}
-                  y={at(cell.g, mid, LANE_WIDTH + 8)[1].toFixed(1)}
-                  dy=".35em"
-                  textAnchor="middle"
-                  className="font-mono text-[7.5px] select-none pointer-events-none font-bold"
-                  fill="#64748b"
-                  opacity={0.8}
-                >
-                  {idx === 0 ? 'START' : idx}
-                </text>
-              )}
-            </g>
-          );
-        })}
-
-        <g key="start-finish-gantry">
-          <line
-            x1={trackGeo.xs}
-            y1={trackGeo.yB - LANE_WIDTH}
-            x2={trackGeo.xs}
-            y2={trackGeo.yB + LANE_WIDTH}
-            stroke="#0f172a"
-            strokeWidth="5"
-          />
-          <line
-            x1={trackGeo.xs}
-            y1={trackGeo.yB - LANE_WIDTH}
-            x2={trackGeo.xs}
-            y2={trackGeo.yB + LANE_WIDTH}
-            stroke="#ffffff"
-            strokeWidth="4"
-            strokeDasharray="2.5 2.5"
-          />
-          <text
-            x={trackGeo.xs}
-            y={trackGeo.yB - LANE_WIDTH - 6}
-            textAnchor="middle"
-            className="font-mono text-[7px] font-extrabold fill-amber-400 select-none pointer-events-none tracking-widest uppercase"
-            style={{ paintOrder: 'stroke', stroke: '#0b0f15', strokeWidth: '2px' }}
-          >
-            FINISH 🏁 START
-          </text>
-        </g>
-
-        {gameState.win !== null && (
-          <g
-            transform={`translate(${centerX.toFixed(1)}, ${(centerY + 34).toFixed(1)})`}
-            className="select-none pointer-events-none animate-pulse"
-          >
-            <rect
-              x="-110"
-              y="-16"
-              width="220"
-              height="32"
-              rx="16"
-              fill="rgba(15, 23, 42, 0.95)"
-              stroke="#fbbf24"
-              strokeWidth="1.8"
-              filter="drop-shadow(0 6px 16px rgba(245, 158, 11, 0.4))"
-            />
-            <text
-              x="0"
-              y="4"
-              textAnchor="middle"
-              className="font-black text-[12px] fill-amber-400 font-sans tracking-wide"
-            >
-              🏁 {gameState.win === 0 ? 'PLAYER 1' : options.bot === 'medium' ? 'AI BOT' : 'PLAYER 2'} WINS! 🏆
-            </text>
-          </g>
-        )}
       </svg>
     </div>
   );
