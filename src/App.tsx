@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   GameMode,
   GameOptions,
@@ -63,7 +63,7 @@ export default function App() {
     laps: 2,
     mom: true,
     head: true,
-    skip: false,
+    skip: true,
     pass: false,
   });
 
@@ -129,7 +129,18 @@ export default function App() {
     win: null,
     sel: createEmptySelection(),
     discardedCards: [[], []],
+    discardedDice: [[], []],
   }));
+
+  // Dice roll animation state
+  const [isRolling, setIsRolling] = useState(false);
+  const rollTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (rollTimerRef.current) clearTimeout(rollTimerRef.current);
+    };
+  }, []);
 
   // Re-sync track when mode changes
   useEffect(() => {
@@ -175,74 +186,108 @@ export default function App() {
       win: null,
       sel: createEmptySelection(),
       discardedCards: [[], []],
+      discardedDice: [[], []],
     });
   }, [options]);
 
-  // Roll / Draw for new round
+  // Roll / Draw for new round with animation & round 1 no-discard rule
   const handleRoll = useCallback(() => {
-    sound.playRoll();
-    setGameState((prev) => {
-      const diceCount = options.mode === 'cards' ? 3 : 5;
-      let didReshuffle = false;
-      const nextP = prev.P.map((p) => {
-        const copy = { ...p };
-        if (options.mode === 'cards') {
-          if (copy.deck.length < diceCount) {
-            copy.deck = shuffle(CARDS);
-            copy.played = [];
-            didReshuffle = true;
-          }
-          copy.dice = copy.deck.splice(0, diceCount);
-        } else {
-          copy.dice = Array.from(
-            { length: diceCount },
-            () => 1 + Math.floor(Math.random() * 6)
-          );
-        }
-        copy.used = [];
-        return copy;
-      }) as [typeof prev.P[0], typeof prev.P[1]];
+    if (isRolling) return;
 
-      const newLogs = [...prev.log];
-      newLogs.push({
-        id: `r-${prev.round}-${Date.now()}`,
-        n: 1,
-        t: `— Round ${prev.round}: ${
-          options.mode === 'cards' ? 'Cards drawn' : 'Dice rolled'
-        } in secret —`,
-      });
+    if (options.mode === 'dice') {
+      sound.playDiceTumble();
+      setIsRolling(true);
+    } else {
+      sound.playRoll();
+    }
 
-      // Skip rule
-      if (options.skip) {
-        const leader = getLeaderIndex(nextP, prev.lead);
-        nextP.forEach((p, i) => {
-          let k = 0;
-          p.dice.forEach((d, j) => {
-            if (i === leader ? d > p.dice[k] : d < p.dice[k]) {
-              k = j;
+    const rollDuration = options.mode === 'dice' ? 700 : 0;
+
+    rollTimerRef.current = setTimeout(() => {
+      sound.playRoll();
+      setGameState((prev) => {
+        const diceCount = options.mode === 'cards' ? 3 : 5;
+        let didReshuffle = false;
+        const nextP = prev.P.map((p) => {
+          const copy = { ...p };
+          if (options.mode === 'cards') {
+            if (copy.deck.length < diceCount) {
+              copy.deck = shuffle(CARDS);
+              copy.played = [];
+              didReshuffle = true;
             }
-          });
-          p.used.push(k);
-        });
-        newLogs.push({
-          id: `skip-${Date.now()}`,
-          t: `Skip rule: P${leader + 1} skips their highest; P${
-            2 - leader
-          } skips their lowest`,
-        });
-      }
+            copy.dice = copy.deck.splice(0, diceCount);
+          } else {
+            copy.dice = Array.from(
+              { length: diceCount },
+              () => 1 + Math.floor(Math.random() * 6)
+            );
+          }
+          copy.used = [];
+          return copy;
+        }) as [typeof prev.P[0], typeof prev.P[1]];
 
-      return {
-        ...prev,
-        step: 0,
-        phase: 'pick0',
-        sel: createEmptySelection(),
-        P: nextP,
-        log: newLogs,
-        discardedCards: didReshuffle ? [[], []] : (prev.discardedCards ?? [[], []]),
-      };
-    });
-  }, [options]);
+        const newLogs = [...prev.log];
+        newLogs.push({
+          id: `r-${prev.round}-${Date.now()}`,
+          n: 1,
+          t: `— Round ${prev.round}: ${
+            options.mode === 'cards' ? 'Cards drawn' : 'Dice rolled'
+          } in secret —`,
+        });
+
+        // Discard / Skip rule:
+        // CRITICAL: Do NOT discard for either player in the very first turn of the race (round 1)!
+        const nextDiscardedDice: [number[], number[]] = [[], []];
+        const shouldDiscard = options.skip && prev.round > 1;
+
+        if (shouldDiscard) {
+          const leader = getLeaderIndex(nextP, prev.lead);
+          nextP.forEach((p, i) => {
+            let k = 0;
+            p.dice.forEach((d, j) => {
+              if (i === leader ? d > p.dice[k] : d < p.dice[k]) {
+                k = j;
+              }
+            });
+            p.used.push(k);
+            nextDiscardedDice[i] = [k];
+          });
+
+          const leaderVal = nextP[leader].dice[nextDiscardedDice[leader][0]];
+          const trailerVal = nextP[1 - leader].dice[nextDiscardedDice[1 - leader][0]];
+          newLogs.push({
+            id: `skip-${Date.now()}`,
+            t: `Discard rule: P${leader + 1} (leader) discards highest (${leaderVal}); P${
+              2 - leader
+            } (trailer) discards lowest (${trailerVal})`,
+          });
+
+          setTimeout(() => {
+            sound.playDiscard();
+          }, 150);
+        } else if (prev.round === 1) {
+          newLogs.push({
+            id: `r1-nodiscard-${Date.now()}`,
+            t: `Opening round: No dice discarded on the first turn of the race! All 5 dice active.`,
+          });
+        }
+
+        setIsRolling(false);
+
+        return {
+          ...prev,
+          step: 0,
+          phase: 'pick0',
+          sel: createEmptySelection(),
+          P: nextP,
+          log: newLogs,
+          discardedCards: didReshuffle ? [[], []] : (prev.discardedCards ?? [[], []]),
+          discardedDice: nextDiscardedDice,
+        };
+      });
+    }, rollDuration);
+  }, [options, isRolling]);
 
   // Compute current reach options for highlight
   const currentReach = useMemo<ReachMap | null>(() => {
@@ -485,7 +530,7 @@ export default function App() {
       const newLog: LogEntry = {
         id: `reveal-${Date.now()}`,
         n: 1,
-        t: `Step ${state.step + 1}/${getRoundSteps(options)}: Revealed — P${
+        t: `Step ${state.step + 1}/${getRoundSteps(options, state.round)}: Revealed — P${
           leader + 1
         } (Leader) ${getCardOrDieLabel(
           state.P[leader].dice[picks[leader].die!],
@@ -642,7 +687,7 @@ export default function App() {
 
   // Proceed to next step or next round
   const handleNextStep = useCallback(() => {
-    const totalSteps = getRoundSteps(options);
+    const totalSteps = getRoundSteps(options, gameState.round);
     if (gameState.win !== null) {
       setGameState((prev) => ({ ...prev, phase: 'over' }));
     } else if (gameState.step >= totalSteps) {
@@ -772,6 +817,7 @@ export default function App() {
       <ActionControls
         gameState={gameState}
         options={options}
+        isRolling={isRolling}
         onRoll={handleRoll}
         onSelectDie={handleSelectDie}
         onAdjustTokens={handleAdjustTokens}

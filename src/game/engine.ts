@@ -12,8 +12,12 @@ export const MOM_VAL = 2;
 export const CARDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
 export const getDiceCount = (mode: GameMode) => (mode === 'cards' ? 3 : 5);
-export const getRoundSteps = (options: GameOptions) =>
-  getDiceCount(options.mode) - (options.skip ? 1 : 0);
+export const getRoundSteps = (options: GameOptions, round: number = 2) => {
+  if (options.mode === 'cards') return 3;
+  // In dice mode, round 1 does NOT discard for either player
+  if (round <= 1) return 5;
+  return 5 - (options.skip ? 1 : 0);
+};
 
 export const getCardOrDieLabel = (val: number, mode: GameMode): string | number => {
   if (mode === 'cards' && val >= 10) {
@@ -421,7 +425,7 @@ export function computeStepFinishedState(
     }
 
     // End of round momentum & discard update
-    const totalSteps = getRoundSteps(options);
+    const totalSteps = getRoundSteps(options, state.round);
     const isRoundEnd = state.step + 1 >= totalSteps;
     if (options.mom && isRoundEnd) {
       const roundDiff = p0.pos - p1.pos;
@@ -447,7 +451,7 @@ export function computeStepFinishedState(
     }
   }
 
-  const isRoundEnd = state.step + 1 >= getRoundSteps(options);
+  const isRoundEnd = state.step + 1 >= getRoundSteps(options, state.round);
   const updatedDiscards: [number[], number[]] =
     isRoundEnd && options.mode === 'cards'
       ? [[...p0.played], [...p1.played]]

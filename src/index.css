@@ -28,3 +28,48 @@
     transparent 8px
   );
 }
+
+@keyframes dice-tumble-a {
+  0% { transform: translateY(0) rotate(0deg) scale(1); }
+  25% { transform: translateY(-10px) rotate(-16deg) scale(1.12); }
+  50% { transform: translateY(5px) rotate(14deg) scale(0.92); }
+  75% { transform: translateY(-6px) rotate(-8deg) scale(1.05); }
+  100% { transform: translateY(0) rotate(0deg) scale(1); }
+}
+
+@keyframes dice-tumble-b {
+  0% { transform: translateY(0) rotate(0deg) scale(1); }
+  25% { transform: translateY(-12px) rotate(18deg) scale(1.08); }
+  50% { transform: translateY(6px) rotate(-12deg) scale(0.95); }
+  75% { transform: translateY(-4px) rotate(10deg) scale(1.03); }
+  100% { transform: translateY(0) rotate(0deg) scale(1); }
+}
+
+@keyframes dice-settle-bounce {
+  0% { transform: scale(1.22); }
+  45% { transform: scale(0.92); }
+  80% { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+
+@keyframes cross-draw {
+  0% { stroke-dashoffset: 60; opacity: 0; }
+  100% { stroke-dashoffset: 0; opacity: 1; }
+}
+
+.animate-dice-tumble-a {
+  animation: dice-tumble-a 0.28s infinite ease-in-out;
+}
+
+.animate-dice-tumble-b {
+  animation: dice-tumble-b 0.32s infinite ease-in-out;
+}
+
+.animate-dice-settle {
+  animation: dice-settle-bounce 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.animate-cross-strike {
+  stroke-dasharray: 60;
+  animation: cross-draw 0.25s ease-out forwards;
+}

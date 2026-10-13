@@ -61,7 +61,13 @@ export const RulesModal: React.FC<RulesModalProps> = ({
               </p>
             ) : (
               <p>
-                Each round, both players roll 5 standard dice (5d6) in secret. Five times per round, each player picks an unused die to race with.
+                Each round, both players roll 5 standard dice (5d6) in secret.
+                <strong> On the very first turn of the race (Round 1)</strong>, all 5 dice are kept and played across 5 steps!
+                {options.skip && (
+                  <span>
+                    {' '}From Round 2 onwards, the Discard Rule takes effect: the race leader discards their highest die and the trailing player discards their lowest die (shown crossed out in red).
+                  </span>
+                )}
               </p>
             )}
           </section>
@@ -154,7 +160,7 @@ export const RulesModal: React.FC<RulesModalProps> = ({
           <section className="space-y-1.5">
             <h3 className="font-bold text-white text-sm">🛑 Track Lanes & Corners</h3>
             <p>
-              • <strong>Inside vs Outside Lane</strong>: On straights, both lanes cost 1 pip per space. On corners, the outside lane costs <strong>2 pips</strong> per space (marked with red curb stripes).
+              • <strong>Inside vs Outside Lane</strong>: On straights, both lanes cost 1 pip per space. On corners, the outside lane is <strong>split into two spaces</strong> (costing 2 pips total to traverse), while the inside lane around the apex kerb is a single space.
             </p>
             <p>
               • <strong>Bottlenecks (Brown single-lane)</strong>: Both cars share the lane. You cannot pass through or land on an opponent in a bottleneck!

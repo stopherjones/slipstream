@@ -41,7 +41,7 @@ export const HUD: React.FC<HUDProps> = ({
   onOpenLog,
   onOpenTrackSelector,
 }) => {
-  const totalSteps = getRoundSteps(options);
+  const totalSteps = getRoundSteps(options, gameState.round);
   const p1 = gameState.P[0];
   const p2 = gameState.P[1];
 

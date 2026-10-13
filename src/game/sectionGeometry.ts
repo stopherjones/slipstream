@@ -29,6 +29,7 @@ export interface RenderCell {
   kerbSide?: 'left' | 'right';
   kerbSegments?: KerbSegment[];
   dividerLine?: { x1: number; y1: number; x2: number; y2: number };
+  cornerOutsideDivider?: { x1: number; y1: number; x2: number; y2: number };
 }
 
 export interface SectionTrackGeometry {
@@ -426,6 +427,14 @@ export function computeSectionTrackGeometry(
         (ptsCenter[midIdx][1] + ptsRight[midIdx][1]) / 2,
       ];
 
+      // Divider line splitting the outside lane into two distinct spaces at midpoint (step = 4)
+      const cornerOutsideDivider = {
+        x1: ptsCenter[midIdx][0],
+        y1: ptsCenter[midIdx][1],
+        x2: isLeft ? ptsRight[midIdx][0] : ptsLeft[midIdx][0],
+        y2: isLeft ? ptsRight[midIdx][1] : ptsLeft[midIdx][1],
+      };
+
       cells.push({
         idx,
         type: 'C',
@@ -439,6 +448,7 @@ export function computeSectionTrackGeometry(
         kerbPoly,
         kerbSide: isLeft ? 'left' : 'right',
         kerbSegments,
+        cornerOutsideDivider,
       });
     }
   }

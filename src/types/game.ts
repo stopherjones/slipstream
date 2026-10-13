@@ -117,6 +117,7 @@ export interface GameState {
   win: number | null;
   sel: TargetSelection;
   discardedCards?: [number[], number[]];
+  discardedDice?: [number[], number[]];
 }
 
 export interface GeoCell {

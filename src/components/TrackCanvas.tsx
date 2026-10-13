@@ -142,24 +142,162 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
     return 300;
   }, [sectionGeo, trackGeo]);
 
+  // Helper to get coordinates and angle for any arbitrary space
+  const getSpaceCoordsAndAngle = useCallback(
+    (pos: number, lane: number): { x: number; y: number; angle: number } => {
+      const cellIdx = ((pos % NC) + NC) % NC;
+      if (sectionGeo) {
+        const cell = sectionGeo.cells[cellIdx];
+        if (cell) {
+          const pt = lane === 0 ? cell.center0 : cell.center1;
+          return { x: pt[0], y: pt[1], angle: cell.angle };
+        }
+      }
+      if (trackGeo) {
+        const cell = trackGeo.cells[cellIdx];
+        if (cell) {
+          const mid = (cell.t1 + cell.t2) / 2;
+          const pt = at(cell.g, mid, lane === 0 ? -LANE_WIDTH / 2 : LANE_WIDTH / 2);
+          const ang = tangentAngle(cell.g, mid);
+          return { x: pt[0], y: pt[1], angle: ang };
+        }
+      }
+      return { x: 0, y: 0, angle: 0 };
+    },
+    [NC, sectionGeo, trackGeo]
+  );
+
+  // Animated Car Rendering State: smooth movement along the track
+  const [displayCars, setDisplayCars] = useState<[
+    { x: number; y: number; angle: number },
+    { x: number; y: number; angle: number }
+  ]>(() => [
+    getSpaceCoordsAndAngle(gameState.P[0].pos, gameState.P[0].lane),
+    getSpaceCoordsAndAngle(gameState.P[1].pos, gameState.P[1].lane),
+  ]);
+
+  const prevCarsRef = useRef<[
+    { pos: number; lane: number },
+    { pos: number; lane: number }
+  ]>([
+    { pos: gameState.P[0].pos, lane: gameState.P[0].lane },
+    { pos: gameState.P[1].pos, lane: gameState.P[1].lane },
+  ]);
+
+  const animFrameRef = useRef<number | null>(null);
+
+  // Smoothly animate car movement along the track waypoints when positions update
+  useEffect(() => {
+    const p0 = gameState.P[0];
+    const p1 = gameState.P[1];
+    const prev0 = prevCarsRef.current[0];
+    const prev1 = prevCarsRef.current[1];
+
+    const p0Changed = p0.pos !== prev0.pos || p0.lane !== prev0.lane;
+    const p1Changed = p1.pos !== prev1.pos || p1.lane !== prev1.lane;
+
+    if (!p0Changed && !p1Changed) return;
+
+    // Helper: build waypoint sequence from start to destination space
+    const buildWaypoints = (
+      fromPos: number,
+      fromLane: number,
+      toPos: number,
+      toLane: number
+    ) => {
+      // If moved backwards or reset to 0 (new race or big warp): snap directly
+      if (toPos < fromPos || toPos - fromPos > 30) {
+        return [getSpaceCoordsAndAngle(toPos, toLane)];
+      }
+      const wps: { x: number; y: number; angle: number }[] = [];
+      for (let s = fromPos; s <= toPos; s++) {
+        const curLane = s === fromPos ? fromLane : toLane;
+        wps.push(getSpaceCoordsAndAngle(s, curLane));
+      }
+      return wps;
+    };
+
+    const wps0 = p0Changed ? buildWaypoints(prev0.pos, prev0.lane, p0.pos, p0.lane) : [];
+    const wps1 = p1Changed ? buildWaypoints(prev1.pos, prev1.lane, p1.pos, p1.lane) : [];
+
+    prevCarsRef.current = [
+      { pos: p0.pos, lane: p0.lane },
+      { pos: p1.pos, lane: p1.lane },
+    ];
+
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+    }
+
+    const maxWpLen = Math.max(wps0.length, wps1.length);
+    const duration = Math.min(850, Math.max(240, (maxWpLen - 1) * 85));
+    const startTime = performance.now();
+
+    const sampleWaypoint = (
+      wps: { x: number; y: number; angle: number }[],
+      progress: number,
+      fallback: { x: number; y: number; angle: number }
+    ) => {
+      if (wps.length === 0) return fallback;
+      if (wps.length === 1) return wps[0];
+      const totalSegs = wps.length - 1;
+      const exact = progress * totalSegs;
+      const idx = Math.min(totalSegs - 1, Math.floor(exact));
+      const frac = exact - idx;
+      const a = wps[idx];
+      const b = wps[idx + 1];
+      const x = a.x + (b.x - a.x) * frac;
+      const y = a.y + (b.y - a.y) * frac;
+      let dAng = ((b.angle - a.angle + 540) % 360) - 180;
+      const angle = a.angle + dAng * frac;
+      return { x, y, angle };
+    };
+
+    const animateCars = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(1, elapsed / duration);
+      // Cubic ease-out
+      const eased = 1 - Math.pow(1 - progress, 3);
+
+      setDisplayCars((prev) => [
+        p0Changed
+          ? sampleWaypoint(wps0, eased, getSpaceCoordsAndAngle(p0.pos, p0.lane))
+          : prev[0],
+        p1Changed
+          ? sampleWaypoint(wps1, eased, getSpaceCoordsAndAngle(p1.pos, p1.lane))
+          : prev[1],
+      ]);
+
+      if (progress < 1) {
+        animFrameRef.current = requestAnimationFrame(animateCars);
+      }
+    };
+
+    animFrameRef.current = requestAnimationFrame(animateCars);
+
+    return () => {
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+      }
+    };
+  }, [
+    gameState.P[0].pos,
+    gameState.P[0].lane,
+    gameState.P[1].pos,
+    gameState.P[1].lane,
+    getSpaceCoordsAndAngle,
+  ]);
+
   // Helper: get world coordinates of player's car
   const getCarCoords = useCallback((playerIdx: number): [number, number] | null => {
+    if (displayCars && displayCars[playerIdx]) {
+      return [displayCars[playerIdx].x, displayCars[playerIdx].y];
+    }
     const p = gameState.P[playerIdx];
     if (!p) return null;
-    const pos = p.pos % NC;
-    if (sectionGeo) {
-      const cell = sectionGeo.cells[pos];
-      if (!cell) return null;
-      return p.lane === 0 ? cell.center0 : cell.center1;
-    }
-    if (trackGeo) {
-      const cell = trackGeo.cells[pos];
-      if (!cell) return null;
-      const mid = (cell.t1 + cell.t2) / 2;
-      return at(cell.g, mid, p.lane === 0 ? -LANE_WIDTH / 2 : LANE_WIDTH / 2);
-    }
-    return null;
-  }, [gameState.P, NC, sectionGeo, trackGeo]);
+    const coords = getSpaceCoordsAndAngle(p.pos, p.lane);
+    return [coords.x, coords.y];
+  }, [displayCars, gameState.P, getSpaceCoordsAndAngle]);
 
   // Auto-follow car if currently snapped to P1 or P2
   useEffect(() => {
@@ -181,10 +319,7 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
       }
     }
   }, [
-    gameState.P[0].pos,
-    gameState.P[0].lane,
-    gameState.P[1].pos,
-    gameState.P[1].lane,
+    displayCars,
     focusMode,
     zoom,
     centerX,
@@ -442,17 +577,6 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
           style={{ filter: 'drop-shadow(0 12px 24px rgba(0,0,0,0.5))' }}
         >
           <defs>
-            <pattern
-              id="cornerCostHatch"
-              width="7"
-              height="7"
-              patternUnits="userSpaceOnUse"
-              patternTransform="rotate(45)"
-            >
-              <rect width="7" height="7" fill="#1b2028" />
-              <rect width="3.5" height="7" fill="#dc2626" opacity="0.65" />
-            </pattern>
-
             <pattern id="checkeredFinish" width="6" height="6" patternUnits="userSpaceOnUse">
               <rect width="3" height="3" fill="#ffffff" />
               <rect x="3" width="3" height="3" fill="#000000" />
@@ -560,16 +684,10 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
 
                     return (
                       <g key={`sec-cell-${cell.idx}-lane-${lane}`}>
-                        {/* Road surface */}
+                        {/* Road surface: standard asphalt on corners (no red striping) */}
                         <polygon
                           points={pts}
-                          fill={
-                            isOutsideCorner
-                              ? 'url(#cornerCostHatch)'
-                              : isBottleneck
-                              ? '#3f2f21'
-                              : '#1a1f28'
-                          }
+                          fill={isBottleneck ? '#3f2f21' : '#1a1f28'}
                           stroke={isBottleneck ? '#854d0e' : '#334155'}
                           strokeWidth={isBottleneck ? 1.2 : 0.7}
                         />
@@ -588,23 +706,17 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
                           />
                         )}
 
-                        {/* Corner Cost Pip Badge */}
-                        {isOutsideCorner && (
-                          <g>
-                            <circle cx={cx} cy={cy} r="3.5" fill="#dc2626" stroke="#ffffff" strokeWidth="0.5" />
-                            <text
-                              x={cx}
-                              y={cy}
-                              dy=".32em"
-                              textAnchor="middle"
-                              fontSize="3"
-                              fontWeight="bold"
-                              fill="#ffffff"
-                              fontFamily="monospace"
-                            >
-                              2
-                            </text>
-                          </g>
+                        {/* Outside corner divider: splits outside curve into two distinct spaces */}
+                        {isOutsideCorner && cell.cornerOutsideDivider && (
+                          <line
+                            x1={cell.cornerOutsideDivider.x1}
+                            y1={cell.cornerOutsideDivider.y1}
+                            x2={cell.cornerOutsideDivider.x2}
+                            y2={cell.cornerOutsideDivider.y2}
+                            stroke="#ffffff"
+                            strokeWidth="1.2"
+                            opacity={0.75}
+                          />
                         )}
 
                         {/* Reach Target overlay highlight */}
@@ -662,24 +774,26 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
                             )}
                           </g>
                         )}
-
-                        {/* Render Attached Car SVGs (Blue Hatchback for P1, Red Saloon for P2) */}
-                        {carsHere.map((q) => (
-                          <CarToken
-                            key={`car-token-${cell.idx}-${lane}-p${q}`}
-                            cx={cx}
-                            cy={cy}
-                            angle={cell.angle}
-                            playerIdx={q}
-                            isLeader={gameState.lead === q}
-                          />
-                        ))}
                       </g>
                     );
                   })}
                 </g>
               );
             })}
+
+            {/* Animated Car SVGs Layer (Blue Hatchback for P1, Red Saloon for P2) */}
+            <g key="sec-animated-cars-layer">
+              {[0, 1].map((q) => (
+                <CarToken
+                  key={`sec-anim-car-p${q}`}
+                  cx={displayCars[q].x}
+                  cy={displayCars[q].y}
+                  angle={displayCars[q].angle}
+                  playerIdx={q}
+                  isLeader={gameState.lead === q}
+                />
+              ))}
+            </g>
 
             {/* Checkered Start Line */}
             <g>
@@ -895,15 +1009,10 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
 
                   return (
                     <g key={`seg-${idx}-${lane}`}>
+                      {/* Road surface: standard asphalt on corners (no red striping) */}
                       <polygon
                         points={pts}
-                        fill={
-                          isOutsideCorner
-                            ? 'url(#cornerCostHatch)'
-                            : isBottleneck
-                            ? '#3f2f21'
-                            : '#1a1f28'
-                        }
+                        fill={isBottleneck ? '#3f2f21' : '#1a1f28'}
                         stroke={isBottleneck ? '#854d0e' : '#334155'}
                         strokeWidth={isBottleneck ? 1.2 : 0.7}
                       />
@@ -921,23 +1030,17 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
                         />
                       )}
 
-                      {/* Corner Cost Pip Badge */}
+                      {/* Outside corner divider: splits outside curve into two distinct spaces */}
                       {isOutsideCorner && (
-                        <g>
-                          <circle cx={cx} cy={cy} r="3.5" fill="#dc2626" stroke="#ffffff" strokeWidth="0.5" />
-                          <text
-                            x={cx}
-                            y={cy}
-                            dy=".32em"
-                            textAnchor="middle"
-                            fontSize="3"
-                            fontWeight="bold"
-                            fill="#ffffff"
-                            fontFamily="monospace"
-                          >
-                            2
-                          </text>
-                        </g>
+                        <line
+                          x1={at(cell.g, mid, 0)[0].toFixed(1)}
+                          y1={at(cell.g, mid, 0)[1].toFixed(1)}
+                          x2={at(cell.g, mid, LANE_WIDTH)[0].toFixed(1)}
+                          y2={at(cell.g, mid, LANE_WIDTH)[1].toFixed(1)}
+                          stroke="#ffffff"
+                          strokeWidth="1.2"
+                          opacity={0.75}
+                        />
                       )}
 
                       {/* Reach Target overlay highlight */}
@@ -996,18 +1099,7 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
                         </g>
                       )}
 
-                      {/* Render Attached Car SVGs */}
-                      {carsHere.map((q) => (
-                        <CarToken
-                          key={`car-token-rect-${idx}-${lane}-p${q}`}
-                          cx={cx}
-                          cy={cy}
-                          angle={headingAngle}
-                          playerIdx={q}
-                          isLeader={gameState.lead === q}
-                        />
-                      ))}
-                    </g>
+                      </g>
                   );
                 })}
 
@@ -1055,6 +1147,20 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
             >
               FINISH 🏁 START
             </text>
+          </g>
+
+          {/* Animated Car SVGs Layer for Rectilinear Track */}
+          <g key="rect-animated-cars-layer">
+            {[0, 1].map((q) => (
+              <CarToken
+                key={`rect-anim-car-p${q}`}
+                cx={displayCars[q].x}
+                cy={displayCars[q].y}
+                angle={displayCars[q].angle}
+                playerIdx={q}
+                isLeader={gameState.lead === q}
+              />
+            ))}
           </g>
 
           {gameState.win !== null && (

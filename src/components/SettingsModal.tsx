@@ -194,11 +194,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </button>
             </div>
 
-            {/* Skip Rule */}
+            {/* Discard / Skip Rule */}
             <div className="flex items-center justify-between">
               <div>
-                <span className="font-semibold text-white block">⏭ Skip Rule</span>
-                <span className="text-[11px] text-stone-400">Leader skips highest; trailer skips lowest</span>
+                <span className="font-semibold text-white block">⏭ Discard Rule</span>
+                <span className="text-[11px] text-stone-400">
+                  Leader discards highest, trailer discards lowest (active from Round 2)
+                </span>
               </div>
               <button
                 onClick={() => toggleOption('skip')}
