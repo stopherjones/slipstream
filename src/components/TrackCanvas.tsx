@@ -47,7 +47,7 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
   const sectionGeo = useMemo(() => {
     if (!isSectionTrack) return null;
     try {
-      return computeSectionTrackGeometry(track.sections!);
+      return computeSectionTrackGeometry(track.sections!, { forceFuzzyClose: true });
     } catch {
       return null;
     }

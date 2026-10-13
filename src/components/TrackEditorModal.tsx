@@ -3,7 +3,8 @@ import { GameOptions, TrackDefinition, TrackSectionType } from '../types/game';
 import {
   computeSectionTrackGeometry,
   autoCloseSections,
-  convertSegmentsToSections,
+  FUZZY_DISTANCE_THRESHOLD,
+  FUZZY_ANGLE_THRESHOLD,
 } from '../game/sectionGeometry';
 import {
   encodeSectionTrackCode,
@@ -13,19 +14,14 @@ import {
   saveCustomTracks,
   saveCurrentCircuitId,
   SavedTrackItem,
-  TRACK_PRESETS,
 } from '../game/tracks';
 import {
   CARDS,
   computeReach,
-  createEmptySelection,
   createInitialPlayer,
   getEndPosition,
   getLeaderIndex,
-  getRoundSteps,
   shuffle,
-  MOM_VAL,
-  SLIP_VAL,
 } from '../game/engine';
 import { sound } from '../game/audio';
 import {
@@ -34,7 +30,6 @@ import {
   RotateCcw,
   Check,
   Copy,
-  Plus,
   Trash2,
   Code2,
   BookmarkCheck,
@@ -45,7 +40,7 @@ import {
   CornerUpRight,
   Minus,
   Sliders,
-  Flag,
+  Zap,
 } from 'lucide-react';
 
 interface TrackEditorModalProps {
@@ -66,7 +61,7 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
   onClose,
   currentCircuit,
   onSelectCircuit,
-  segments,
+  segments: _segments,
   options,
   editorActive: _editorActive,
   onToggleEditorActive: _onToggleEditorActive,
@@ -78,7 +73,6 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
     if (currentCircuit?.sections && currentCircuit.sections.length > 0) {
       return currentCircuit.sections;
     }
-    // Default to a blank screen other than start/finish line as requested
     return [];
   });
 
@@ -92,10 +86,14 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [simResults, setSimResults] = useState<string | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
+  const [forceFuzzyClose, setForceFuzzyClose] = useState(false);
   const [savedTracksList, setSavedTracksList] = useState<SavedTrackItem[]>(() => loadSavedCustomTracks());
 
-  // Compute live geometry
-  const geometry = useMemo(() => computeSectionTrackGeometry(sections), [sections]);
+  // Compute live geometry with seamless fuzzy matching
+  const geometry = useMemo(
+    () => computeSectionTrackGeometry(sections, { forceFuzzyClose }),
+    [sections, forceFuzzyClose]
+  );
 
   // Statistics
   const totalPieces = sections.length;
@@ -110,16 +108,19 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
   const handleAddPiece = (piece: TrackSectionType) => {
     sound.playSelect();
     setSections((prev) => [...prev, piece]);
+    setForceFuzzyClose(false);
   };
 
   const handleUndo = () => {
     sound.playSelect();
     setSections((prev) => prev.slice(0, -1));
+    setForceFuzzyClose(false);
   };
 
   const handleClearBlank = () => {
     sound.playSelect();
     setSections([]);
+    setForceFuzzyClose(false);
   };
 
   const handleAutoComplete = () => {
@@ -127,12 +128,19 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
     const closed = autoCloseSections(sections);
     if (closed) {
       setSections(closed);
+      setForceFuzzyClose(false);
     }
+  };
+
+  const handleForceSnapClose = () => {
+    sound.playSelect();
+    setForceFuzzyClose(true);
   };
 
   const handleLoadPreset = (presetSections: TrackSectionType[]) => {
     sound.playSelect();
     setSections(presetSections);
+    setForceFuzzyClose(false);
   };
 
   // Convert sections to equivalent legacy segments for backwards compatibility
@@ -221,6 +229,30 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
     onClose();
   };
 
+  // Launch any track from the saved tracks list
+  const handleLaunchSavedTrack = (tr: SavedTrackItem) => {
+    const circuitDef: TrackDefinition = {
+      id: tr.id || tr.name.toLowerCase().replace(/[^a-z0-9_-]/g, '_'),
+      name: tr.name,
+      country: tr.country || 'Custom 🏁',
+      description: tr.description || 'Custom crafted player circuit.',
+      difficulty: tr.difficulty || 'Intermediate',
+      lapsDefault: tr.lapsDefault || 2,
+      sections: tr.sections,
+      segments: tr.segments || exportSegments(),
+    };
+
+    if (onSelectCircuit) {
+      onSelectCircuit(circuitDef);
+    } else {
+      onUpdateSegments(circuitDef.segments);
+    }
+
+    sound.playMove();
+    onRestartRace();
+    onClose();
+  };
+
   // Copy helpers
   const handleCopyCodeSnippet = () => {
     const name = trackNameInput.trim() || 'Custom Circuit';
@@ -251,6 +283,7 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
     if (parsed && parsed.length >= 4) {
       setSections(parsed);
       setCodeImportInput('');
+      setForceFuzzyClose(false);
       sound.playSelect();
     }
   };
@@ -314,7 +347,7 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
         const avgRounds = (totalRounds / 100).toFixed(1);
 
         setSimResults(
-          `🏁 100-Race Simulation Complete:\n• P1 Win Rate: ${p1Wins}%\n• P2 Win Rate: ${p2Wins}%\n• Avg Lead Changes: ${avgLeadChanges} per race\n• Avg Duration: ${avgRounds} rounds\n• Circuit Flow: Balanced & race-ready!`
+          `🏁 100-Race Simulation Complete:\n• P1 Win Rate: ${p1Wins}%\n• P2 Win Rate: ${p2Wins}%\n• Avg Lead Changes: ${avgLeadChanges} per race\n• Avg Duration: ${avgRounds} rounds\n• Circuit Flow: Seamless & race-ready!`
         );
       } catch {
         setSimResults('Simulation completed: Circuit balanced and playable.');
@@ -323,6 +356,8 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
       }
     }, 150);
   };
+
+  const isNearStart = sections.length >= 4 && geometry.distanceToStart <= 120 && !geometry.isClosed;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md animate-fade-in">
@@ -336,12 +371,12 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
             <div>
               <h2 className="text-sm font-bold text-white flex items-center gap-1.5">
                 Track Architect
-                <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-semibold">
-                  Modular 45°
+                <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-semibold flex items-center gap-1">
+                  <Zap className="w-3 h-3 text-amber-400" /> Fuzzy Matching
                 </span>
               </h2>
               <p className="text-[11px] text-stone-400">
-                Click pieces to build from the start line until you arrive back at start
+                Click pieces to build from the start line. Gaps near the start line are seamlessly closed!
               </p>
             </div>
           </div>
@@ -376,7 +411,7 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
             }`}
           >
             <BookmarkCheck className="w-3.5 h-3.5" />
-            <span>Save to My Tracks</span>
+            <span>My Tracks ({savedTracksList.length})</span>
           </button>
           <button
             onClick={() => setActiveTab('code')}
@@ -541,7 +576,7 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
                     );
                   })}
 
-                  {/* START / FINISH LINE (Always visible on blank or built track) */}
+                  {/* START / FINISH LINE */}
                   <g>
                     {/* Checkered Start line bar */}
                     <rect
@@ -625,7 +660,14 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
                   <div className="absolute top-2.5 inset-x-3 flex items-center justify-between p-2 rounded-lg bg-emerald-950/90 border border-emerald-500 text-emerald-200 text-xs shadow-lg backdrop-blur">
                     <div className="flex items-center gap-1.5 font-bold">
                       <Check className="w-4 h-4 text-emerald-400" />
-                      <span>Circuit Loop Complete! ({totalPieces} pieces)</span>
+                      <span>
+                        Circuit Loop Complete & Seamless! ({totalPieces} pieces)
+                        {geometry.isFuzzyMatched && (
+                          <span className="ml-1 text-[10px] font-mono text-emerald-300">
+                            (⚡ {geometry.fuzzySnapDistance}m fuzzy snap)
+                          </span>
+                        )}
+                      </span>
                     </div>
                     <button
                       onClick={handleRaceNow}
@@ -639,17 +681,33 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
               </div>
 
               {/* Status bar */}
-              <div className="flex items-center justify-between px-3 py-2 bg-stone-950 rounded-xl border border-stone-800 text-xs">
+              <div className="flex items-center justify-between px-3 py-2 bg-stone-950 rounded-xl border border-stone-800 text-xs flex-wrap gap-2">
                 <div className="flex items-center gap-2">
                   <span className="text-stone-400">Status:</span>
                   {geometry.isClosed ? (
                     <span className="font-bold text-emerald-400 flex items-center gap-1">
-                      <Check className="w-3.5 h-3.5" /> Loop Closed
+                      <Check className="w-3.5 h-3.5" /> Loop Closed & Seamless
+                      {geometry.isFuzzyMatched && (
+                        <span className="text-[10px] bg-emerald-500/20 px-1.5 py-0.5 rounded text-emerald-300 border border-emerald-500/30">
+                          ⚡ Fuzzy Snapped
+                        </span>
+                      )}
                     </span>
                   ) : (
-                    <span className="font-semibold text-amber-400">
-                      Open ({Math.round(geometry.distanceToStart)}m to start line)
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-amber-400">
+                        Open ({Math.round(geometry.distanceToStart)}m from start)
+                      </span>
+                      {isNearStart && (
+                        <button
+                          onClick={handleForceSnapClose}
+                          className="px-2 py-0.5 rounded bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-[10px] flex items-center gap-1 shadow animate-pulse"
+                        >
+                          <Zap className="w-3 h-3 fill-current" />
+                          <span>Snap & Close Seamlessly</span>
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
                 <div className="flex items-center gap-3 font-mono text-[11px] text-stone-300">
@@ -666,7 +724,7 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
                     Click to Add Track Section
                   </span>
                   <span className="text-[10px] text-stone-500">
-                    Corners: 45° · Inside 1 pip / Outside 2 pips
+                    Fuzzy threshold: ~{FUZZY_DISTANCE_THRESHOLD}m & {FUZZY_ANGLE_THRESHOLD}°
                   </span>
                 </div>
 
@@ -759,11 +817,20 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
                     <Sparkles className="w-3.5 h-3.5" />
                     <span>Auto-Close Loop</span>
                   </button>
+                  {isNearStart && (
+                    <button
+                      onClick={handleForceSnapClose}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white flex items-center gap-1 transition shadow"
+                    >
+                      <Zap className="w-3.5 h-3.5 fill-current" />
+                      <span>Fuzzy Snap</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Preset Starters */}
-                <div className="flex items-center gap-1 text-[11px]">
-                  <span className="text-stone-500 mr-1">Starters:</span>
+                <div className="flex items-center gap-1 text-[11px] flex-wrap">
+                  <span className="text-stone-500 mr-1">Presets:</span>
                   <button
                     onClick={() =>
                       handleLoadPreset([
@@ -793,6 +860,16 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
                     className="px-2 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 transition"
                   >
                     Octagon
+                  </button>
+                  <button
+                    onClick={() =>
+                      handleLoadPreset([
+                        'T', 'T', 'T', 'R', 'R', 'T', 'S', 'S', 'T', 'R', 'R', 'T', 'T', 'T', 'R', 'R', 'T', 'S', 'S', 'T', 'R', 'R', 'T',
+                      ])
+                    }
+                    className="px-2 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 transition"
+                  >
+                    Grand Prix
                   </button>
                 </div>
               </div>
@@ -904,7 +981,7 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
               {savedTracksList.length > 0 && (
                 <div className="space-y-2">
                   <span className="text-xs font-bold text-stone-400 uppercase tracking-wider block">
-                    Existing Saved Custom Circuits ({savedTracksList.length})
+                    Saved Custom Circuits ({savedTracksList.length}) — Click to Race
                   </span>
                   <div className="space-y-1.5">
                     {savedTracksList.map((tr) => (
@@ -922,6 +999,14 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
                           </div>
                         </div>
                         <div className="flex items-center gap-1.5">
+                          {/* 1-Click Race this track */}
+                          <button
+                            onClick={() => handleLaunchSavedTrack(tr)}
+                            className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center gap-1 transition shadow"
+                          >
+                            <Play className="w-3 h-3 fill-current" />
+                            <span>Race</span>
+                          </button>
                           {tr.sections && (
                             <button
                               onClick={() => {
@@ -1073,7 +1158,9 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
             {sections.length === 0 ? (
               <span>Start screen: add straight or corner pieces</span>
             ) : geometry.isClosed ? (
-              <span className="text-emerald-400 font-semibold">✓ Ready to race</span>
+              <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                <Check className="w-3.5 h-3.5" /> Seamless loop complete — ready to race
+              </span>
             ) : (
               <span>Add pieces until loop closes to start line</span>
             )}

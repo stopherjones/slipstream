@@ -195,6 +195,58 @@ export const TRACK_PRESETS: TrackDefinition[] = [
       'TTTTTT',   // Finish Straight
     ],
   },
+  {
+    id: 'chicane_ring',
+    name: 'Kyalami Chicane Ring',
+    country: 'South Africa 🇿🇦',
+    description: 'Dynamic layout with fast 45° chicanes, tactical single-lane pinch points, and long sprint straights.',
+    difficulty: 'Intermediate',
+    lapsDefault: 2,
+    sections: [
+      'T', 'T', 'T',
+      'R', 'R',
+      'T', 'S', 'S', 'T',
+      'R', 'R',
+      'T', 'T', 'T', 'T',
+      'R', 'R',
+      'T', 'S', 'S', 'T',
+      'R', 'R',
+      'T', 'T', 'T',
+    ],
+    segments: [
+      'TTT',
+      'CC',
+      'TSST',
+      'CC',
+      'TTTT',
+      'CC',
+      'TSST',
+      'CC',
+      'TTT',
+    ],
+  },
+  {
+    id: 'octagon_gp',
+    name: 'Interlagos Octagon GP',
+    country: 'Brazil 🇧🇷',
+    description: 'Flowing 8-apex arena with pure 45° high-speed sweepers and wide double-lane slipstream corridors.',
+    difficulty: 'Pro',
+    lapsDefault: 2,
+    sections: [
+      'T', 'R', 'T', 'R', 'T', 'R', 'T', 'R', 'T', 'R', 'T', 'R', 'T', 'R', 'T', 'R',
+    ],
+    segments: [
+      'TT',
+      'CC',
+      'TT',
+      'CC',
+      'TT',
+      'CC',
+      'TT',
+      'CC',
+      'TT',
+    ],
+  },
 ];
 
 export const REAL_CIRCUITS = TRACK_PRESETS;
@@ -376,6 +428,8 @@ export function getCircuitById(id: string): TrackDefinition {
 
   const custom = loadSavedCustomTracks().find((c) => c.id === id || c.name === id);
   if (custom) {
+    const parsedSections =
+      custom.sections ?? (custom.code ? parseSectionTrackCode(custom.code) ?? undefined : undefined);
     const segs =
       custom.segments ?? (custom.code ? parseTrackCode(custom.code) : null) ?? DEFAULT_TRACK_SEGMENTS.dice;
     return {
@@ -386,7 +440,7 @@ export function getCircuitById(id: string): TrackDefinition {
       difficulty: custom.difficulty || 'Intermediate',
       lapsDefault: custom.lapsDefault || 2,
       segments: segs,
-      sections: custom.sections,
+      sections: parsedSections,
     };
   }
 

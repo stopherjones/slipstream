@@ -3,6 +3,7 @@ import { TrackDefinition } from '../types/game';
 import {
   loadSavedCustomTracks,
   parseTrackCode,
+  parseSectionTrackCode,
   TRACK_PRESETS,
 } from '../game/tracks';
 import {
@@ -43,7 +44,7 @@ export const TrackSelectorModal: React.FC<TrackSelectorModalProps> = ({
       description: tr.description || 'Custom crafted circuit.',
       difficulty: (tr.difficulty ?? 'Intermediate') as 'Beginner' | 'Intermediate' | 'Pro',
       lapsDefault: tr.lapsDefault ?? 2,
-      sections: tr.sections,
+      sections: tr.sections ?? (tr.code ? parseSectionTrackCode(tr.code) ?? undefined : undefined),
       segments: tr.segments ?? (tr.code ? parseTrackCode(tr.code) : null) ?? TRACK_PRESETS[0].segments,
     })),
   ];
@@ -102,7 +103,7 @@ export const TrackSelectorModal: React.FC<TrackSelectorModalProps> = ({
             let secGeo = null;
             if (isSectionTrack) {
               try {
-                secGeo = computeSectionTrackGeometry(circuit.sections!);
+                secGeo = computeSectionTrackGeometry(circuit.sections!, { forceFuzzyClose: true });
               } catch {
                 // fallback
               }
