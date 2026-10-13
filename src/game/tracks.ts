@@ -6,35 +6,15 @@ import { TrackDefinition, TrackSectionType } from '../types/game';
 
 export const TRACK_PRESETS: TrackDefinition[] = [
   {
-  id: 'bathurst',
-  name: 'Bathurst',
-  country: 'Australia 🏁',
-  description: 'Iconic Australian race track climbing Mount Panorama.',
-  difficulty: 'Intermediate',
-  lapsDefault: 2,
-  sections: ["T", "T", "L", "L", "T", "T", "T", "T", "T", "R", "R", "R", "T", "T", "L", "L", "L", "L", "S", "R", "T", "R", "L", "T", "T", "T", "T", "L", "T", "L", "T", "T", "R", "L", "L", "R", "S", "S", "R", "T", "T", "L", "L", "T", "T", "S", "S", "L", "L", "T", "R", "T", "T", "T", "T", "T", "T", "T", "T", "R", "T", "L", "T", "L", "T", "L", "T", "T", "T", "T", "T", "T"],
-  segments: [
-    'TTTTT',
-    'CC',
-    'TTSTT',
-    'CC',
-    'TTTT',
-    'CC',
-    'TTSTT',
-    'CC',
-    'TTTT',
-  ],
-},
-    {
-    id: 'custom_circuit',
-    name: 'Custom Circuit',
-    country: 'Custom 🏁',
-    description: 'Custom racing circuit with 45° corners.',
+    id: 'bathurst',
+    name: 'Bathurst',
+    country: 'Australia 🇦🇺',
+    description: 'Iconic Australian race track climbing Mount Panorama.',
     difficulty: 'Intermediate',
     lapsDefault: 2,
-    sections: ["T","T","R","T","T","L","S","S","S","L","L","L","L","T","T","R","T","T","L","T","T","S","S","S","L","L","L","L","T","T"],
+    sections: ["T", "T", "L", "L", "T", "T", "T", "T", "T", "R", "R", "R", "T", "T", "L", "L", "L", "L", "S", "R", "T", "R", "L", "T", "T", "T", "T", "L", "T", "L", "T", "T", "R", "L", "L", "R", "S", "S", "R", "T", "T", "L", "L", "T", "T", "S", "S", "L", "L", "T", "R", "T", "T", "T", "T", "T", "T", "T", "T", "R", "T", "L", "T", "L", "T", "L", "T", "T", "T", "T", "T", "T"],
     segments: [
-      'TTTTS',
+      'TTTTT',
       'CC',
       'TTSTT',
       'CC',
@@ -46,205 +26,63 @@ export const TRACK_PRESETS: TrackDefinition[] = [
     ],
   },
   {
-    id: 'silverstone',
-    name: 'Silverstone Grand Prix',
-    country: 'Great Britain 🇬🇧',
-    description: 'Classic British circuit with expansive straights, Wellington single-lane bottleneck, and wide 3-cell 90° corner complexes.',
+    id: 'brands-hatch',
+    name: 'Brands Hatch',
+    country: 'United Kingdom 🇬🇧',
+    description: 'Classic compact circuit with tight corners and fast straights.',
     difficulty: 'Intermediate',
     lapsDefault: 2,
-    sections: [
-      'T', 'T', 'T', 'T',
-      'R', 'R',
-      'T', 'T', 'S', 'S', 'S', 'T',
-      'R', 'R',
-      'T', 'T', 'T', 'T', 'T', 'T', 'T',
-      'R', 'R',
-      'T', 'T', 'S', 'S', 'S', 'T',
-      'R', 'R',
-      'T', 'T', 'T', 'T',
-    ],
+    sections: ["T", "T", "T", "L", "L", "T", "T", "T", "T", "R", "R", "S", "S", "L", "T", "L", "T", "T", "T", "T", "L", "L", "T", "T", "T", "T", "S", "L", "L", "T", "T", "T", "T", "T", "T", "T", "T", "R", "R", "S", "S", "S", "R", "R", "R", "S", "S", "S", "L", "L", "L", "L", "T", "T", "T", "T", "T", "T", "T", "L", "T", "L", "T", "L", "T", "T", "T", "T"],
     segments: [
-      'TTTT',    // Start Straight
-      'CCC',     // Turn 1 (90° Abbey)
-      'TTSSST',  // Right Straight (Wellington)
-      'CCC',     // Turn 2 (90° Brooklands)
-      'TTTTTTT', // Top Straight (Hangar Straight)
-      'CCC',     // Turn 3 (90° Stowe)
-      'TTSSST',  // Left Straight (Vale)
-      'CCC',     // Turn 4 (90° Club)
-      'TTTT',    // Finish Straight
-    ],
-  },
-  {
-    id: 'suzuka',
-    name: 'Suzuka International',
-    country: 'Japan 🇯🇵',
-    description: 'Demanding technical circuit with dual extended single-lane bottleneck sections, tight braking zones, and long straights.',
-    difficulty: 'Pro',
-    lapsDefault: 2,
-    sections: [
-      'T', 'T', 'T', 'T',
-      'R', 'R',
-      'T', 'T', 'S', 'S', 'S', 'S', 'S', 'T',
-      'R', 'R',
-      'T', 'T', 'T', 'T', 'T', 'T', 'T', 'T',
-      'R', 'R',
-      'T', 'S', 'S', 'S', 'S', 'S', 'T', 'T',
-      'R', 'R',
-      'T', 'T', 'T', 'T',
-    ],
-    segments: [
-      'TTTT',     // Start Straight
-      'CC',       // Turn 1 (90°)
-      'TTSSSSST', // Right Straight (Hairpin bottleneck)
-      'CCC',      // Turn 2 (90° Spoon)
-      'TTTTTTTT', // Top Straight (200R & 130R)
-      'CC',       // Turn 3 (90° Casio)
-      'TSSSSSTT', // Left Straight (Snake bottleneck)
-      'CCC',      // Turn 4 (90°)
-      'TTTT',     // Finish Straight
-    ],
-  },
-  {
-    id: 'sprint',
-    name: 'Red Bull Sprint Ring',
-    country: 'Austria 🇦🇹',
-    description: 'Ultra-compact 26-space high-speed arena with rapid corner transitions and sharp single-lane chicanes. Fast & intense.',
-    difficulty: 'Beginner',
-    lapsDefault: 3,
-    sections: [
-      'T', 'T', 'T',
-      'R', 'R',
-      'T', 'T', 'S', 'T',
-      'R', 'R',
-      'T', 'T', 'T', 'T',
-      'R', 'R',
-      'T', 'S', 'T', 'T',
-      'R', 'R',
-      'T', 'T', 'T',
-    ],
-    segments: [
-      'TTT',  // Start Straight
-      'CC',   // Turn 1 (90°)
-      'TTST', // Right Straight
-      'CC',   // Turn 2 (90°)
-      'TTTT', // Top Straight
-      'CC',   // Turn 3 (90°)
-      'TSTT', // Left Straight
-      'CC',   // Turn 4 (90°)
-      'TTT',  // Finish Straight
+      'TTTTT',
+      'CC',
+      'TTSTT',
+      'CC',
+      'TTTT',
+      'CC',
+      'TTSTT',
+      'CC',
+      'TTTT',
     ],
   },
   {
     id: 'monaco',
-    name: 'Monaco Street Circuit',
+    name: 'Monaco',
     country: 'Monaco 🇲🇨',
-    description: 'Ultra-tight harbour course dominated by single-lane bottlenecks where track position, blocking, and drafting are everything.',
-    difficulty: 'Pro',
+    description: 'Tight and twisty street course and centre piece of the Grand Prix calendar.',
+    difficulty: 'Intermediate',
     lapsDefault: 2,
-    sections: [
-      'T', 'T', 'T',
-      'R', 'R',
-      'S', 'S', 'T', 'S', 'S',
-      'R', 'R',
-      'T', 'T', 'T', 'T', 'T',
-      'R', 'R',
-      'S', 'S', 'S', 'S', 'T',
-      'R', 'R',
-      'T', 'T', 'T',
-    ],
+    sections: ["T", "T", "T", "R", "L", "L", "L", "T", "T", "T", "L", "L", "L", "L", "T", "R", "R", "R", "L", "T", "T", "T", "T", "R", "R", "R", "T", "T", "T", "T", "T", "R", "T", "L", "T", "T", "T", "L", "T", "R", "T", "T", "T", "L", "T", "T", "L", "T", "T", "T", "L", "L", "L", "L", "S", "S", "R", "R", "R", "R", "S", "S", "S", "L", "L", "T", "L", "T", "T", "T", "T", "L", "R", "R", "T", "T", "T", "T", "T", "T", "T", "T", "T", "T", "T", "T", "L", "L", "L", "T", "T", "T", "T", "T", "T", "T", "T"],
     segments: [
-      'TTT',   // Start Straight
-      'CC',    // Turn 1 (Sainte Devote)
-      'SSTSS', // Right Straight (Casino bottleneck)
-      'CC',    // Turn 2 (Mirabeau)
-      'TTTTT', // Top Straight (Tunnel)
-      'CC',    // Turn 3 (Chicane)
-      'SSSST', // Left Straight (Swimming Pool & Rascasse)
-      'CC',    // Turn 4 (Anthony Noghes)
-      'TTT',   // Finish Straight
+      'TTTTT',
+      'CC',
+      'TTSTT',
+      'CC',
+      'TTTT',
+      'CC',
+      'TTSTT',
+      'CC',
+      'TTTT',
     ],
   },
   {
     id: 'speedway',
-    name: 'Speedway Twin-Oval',
+    name: 'Indianapolis Speedway',
     country: 'USA 🇺🇸',
-    description: 'Massive high-speed drafting circuit with extended straights designed for slipstream leaps, broken by two tactical bottlenecks.',
+    description: 'Fast oval circuit with wide corners and long, fast straights.',
     difficulty: 'Intermediate',
     lapsDefault: 2,
-    sections: [
-      'T', 'T', 'T', 'T', 'T', 'T',
-      'R', 'R',
-      'T', 'T', 'S', 'T', 'T',
-      'R', 'R',
-      'T', 'T', 'T', 'T', 'T', 'T', 'T', 'T',
-      'R', 'R',
-      'T', 'T', 'S', 'T', 'T',
-      'R', 'R',
-      'T', 'T', 'T', 'T', 'T', 'T',
-    ],
+    sections: ["T", "T", "T", "T", "T", "T", "T", "T", "L", "T", "L", "T", "T", "T", "T", "L", "T", "L", "T", "T", "T", "T", "T", "T", "T", "T", "T", "T", "T", "T", "T", "T", "T", "L", "T", "L", "T", "T", "T", "T", "L", "T", "L", "T", "T", "T", "T", "T"],
     segments: [
-      'TTTTTT',   // Start Straight
-      'CC',       // Turn 1 (90°)
-      'TTSTT',    // Right Straight
-      'CC',       // Turn 2 (90°)
-      'TTTTTTTT', // Top Super-Straight
-      'CC',       // Turn 3 (90°)
-      'TTSTT',    // Left Straight
-      'CC',       // Turn 4 (90°)
-      'TTTTTT',   // Finish Straight
-    ],
-  },
-  {
-    id: 'chicane_ring',
-    name: 'Kyalami Chicane Ring',
-    country: 'South Africa 🇿🇦',
-    description: 'Dynamic layout with fast 45° chicanes, tactical single-lane pinch points, and long sprint straights.',
-    difficulty: 'Intermediate',
-    lapsDefault: 2,
-    sections: [
-      'T', 'T', 'T',
-      'R', 'R',
-      'T', 'S', 'S', 'T',
-      'R', 'R',
-      'T', 'T', 'T', 'T',
-      'R', 'R',
-      'T', 'S', 'S', 'T',
-      'R', 'R',
-      'T', 'T', 'T',
-    ],
-    segments: [
-      'TTT',
+      'TTTTT',
       'CC',
-      'TSST',
+      'TTSTT',
       'CC',
       'TTTT',
       'CC',
-      'TSST',
+      'TTSTT',
       'CC',
-      'TTT',
-    ],
-  },
-  {
-    id: 'octagon_gp',
-    name: 'Interlagos Octagon GP',
-    country: 'Brazil 🇧🇷',
-    description: 'Flowing 8-apex arena with pure 45° high-speed sweepers and wide double-lane slipstream corridors.',
-    difficulty: 'Pro',
-    lapsDefault: 2,
-    sections: [
-      'T', 'R', 'T', 'R', 'T', 'R', 'T', 'R', 'T', 'R', 'T', 'R', 'T', 'R', 'T', 'R',
-    ],
-    segments: [
-      'TT',
-      'CC',
-      'TT',
-      'CC',
-      'TT',
-      'CC',
-      'TT',
-      'CC',
-      'TT',
+      'TTTT',
     ],
   },
 ];
