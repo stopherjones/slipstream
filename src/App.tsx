@@ -205,6 +205,7 @@ export default function App() {
 
     rollTimerRef.current = setTimeout(() => {
       sound.playRoll();
+      setIsRolling(false);
       setGameState((prev) => {
         const diceCount = options.mode === 'cards' ? 3 : 5;
         let didReshuffle = false;
@@ -272,8 +273,6 @@ export default function App() {
             t: `Opening round: No dice discarded on the first turn of the race! All 5 dice active.`,
           });
         }
-
-        setIsRolling(false);
 
         return {
           ...prev,
@@ -523,7 +522,30 @@ export default function App() {
 
   // Reveal Phase: leader moves, then trailer enters react phase
   const handleReveal = useCallback(
-    (picks: [TargetSelection, TargetSelection], state: GameState) => {
+    (picks: [TargetSelection | null, TargetSelection | null], state: GameState) => {
+      const hasInvalidPick = picks.some((pick, playerIdx) =>
+        !pick ||
+        pick.die === null ||
+        !Number.isInteger(pick.die) ||
+        pick.die < 0 ||
+        pick.die >= state.P[playerIdx].dice.length
+      );
+
+      if (hasInvalidPick) {
+        setGameState({
+          ...state,
+          phase: 'pick0',
+          picks: [null, null],
+          sel: createEmptySelection(),
+          log: [
+            ...state.log,
+            { id: `invalid-pick-${Date.now()}`, t: 'Invalid choice; please select again.' },
+          ],
+        });
+        return;
+      }
+
+      const validPicks = picks as [TargetSelection, TargetSelection];
       const leader = getLeaderIndex(state.P, state.lead);
       const trailer = 1 - leader;
 
@@ -533,16 +555,16 @@ export default function App() {
         t: `Step ${state.step + 1}/${getRoundSteps(options, state.round)}: Revealed — P${
           leader + 1
         } (Leader) ${getCardOrDieLabel(
-          state.P[leader].dice[picks[leader].die!],
+          state.P[leader].dice[validPicks[leader].die!],
           options.mode
         )}, P${trailer + 1} (Trailer) ${getCardOrDieLabel(
-          state.P[trailer].dice[picks[trailer].die!],
+          state.P[trailer].dice[validPicks[trailer].die!],
           options.mode
         )}`,
       };
 
       const stateWithLog = { ...state, log: [...state.log, newLog] };
-      const { nextState, winIndex } = executeMove(leader, picks[leader], stateWithLog);
+      const { nextState, winIndex } = executeMove(leader, validPicks[leader], stateWithLog);
 
       if (winIndex !== null) {
         setGameState(nextState);
@@ -555,7 +577,7 @@ export default function App() {
         lead: leader,
         tr: trailer,
         sel: {
-          die: picks[trailer].die,
+          die: validPicks[trailer].die,
           slip: 0,
           mom: 0,
           tgt: null,
@@ -568,7 +590,7 @@ export default function App() {
         const val = calculateEffectiveValue(
           trailer,
           trailerReactState.sel,
-          state.P[trailer].dice[picks[trailer].die!],
+          state.P[trailer].dice[validPicks[trailer].die!],
           trailerReactState,
           options
         );
@@ -644,10 +666,7 @@ export default function App() {
         };
 
         nextPicks[1] = botPick;
-        handleReveal(
-          [nextPicks[0]!, nextPicks[1]!],
-          { ...gameState, picks: nextPicks }
-        );
+        handleReveal(nextPicks, { ...gameState, picks: nextPicks });
       } else {
         // Human 2P pass and play
         setGameState((prev) => ({
@@ -658,10 +677,7 @@ export default function App() {
       }
     } else {
       // Phase pick1: both locked in, reveal!
-      handleReveal(
-        [nextPicks[0]!, nextPicks[1]!],
-        { ...gameState, picks: nextPicks }
-      );
+      handleReveal(nextPicks, { ...gameState, picks: nextPicks });
     }
   }, [gameState, options, trackArray, outsideLanes, handleReveal]);
 
@@ -781,7 +797,7 @@ export default function App() {
   );
 
   return (
-    <div className="h-full h-[100dvh] w-full flex flex-col justify-between overflow-hidden bg-stone-950 text-stone-100 select-none touch-manipulation">
+    <div className="h-[100dvh] min-h-0 w-full flex flex-col justify-between overflow-hidden bg-stone-950 text-stone-100 select-none touch-manipulation">
       {/* 1. Top HUD Header */}
       <HUD
         circuit={currentCircuit}

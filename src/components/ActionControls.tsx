@@ -140,7 +140,7 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
   const latestLog = gameState.log.length > 0 ? gameState.log[gameState.log.length - 1].t : 'Ready to race.';
 
   return (
-    <footer className="w-full shrink-0 flex flex-col bg-stone-950/95 border-t border-stone-800 text-stone-200">
+    <footer className="w-full shrink-0 max-h-[55dvh] overflow-y-auto overscroll-contain flex flex-col bg-stone-950/95 border-t border-stone-800 text-stone-200">
       {/* 1-Line Race commentary ticker */}
       <div className="w-full bg-stone-900/60 px-3 py-1 border-b border-stone-800/80 flex items-center justify-between text-[11px] font-mono text-stone-400">
         <span className="truncate pr-2 text-stone-300">{latestLog}</span>
@@ -417,7 +417,7 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
             )}
 
             {/* Action CTA Button */}
-            <div className="pt-0.5">
+            <div className="sticky bottom-0 z-10 bg-stone-950/95 pt-1 pb-[env(safe-area-inset-bottom)]">
               {isReact ? (
                 <button
                   disabled={!sel.tgt}

@@ -241,11 +241,14 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
       if (wps.length === 0) return fallback;
       if (wps.length === 1) return wps[0];
       const totalSegs = wps.length - 1;
-      const exact = progress * totalSegs;
-      const idx = Math.min(totalSegs - 1, Math.floor(exact));
+      const boundedProgress = Number.isFinite(progress)
+        ? Math.max(0, Math.min(1, progress))
+        : 1;
+      const exact = boundedProgress * totalSegs;
+      const idx = Math.max(0, Math.min(totalSegs - 1, Math.floor(exact)));
       const frac = exact - idx;
-      const a = wps[idx];
-      const b = wps[idx + 1];
+      const a = wps[idx] ?? fallback;
+      const b = wps[idx + 1] ?? a;
       const x = a.x + (b.x - a.x) * frac;
       const y = a.y + (b.y - a.y) * frac;
       let dAng = ((b.angle - a.angle + 540) % 360) - 180;
