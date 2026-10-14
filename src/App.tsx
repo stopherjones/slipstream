@@ -30,6 +30,7 @@ import {
   getJumpTarget,
   getLeaderIndex,
   getPassTarget,
+  getPlayerState,
   getRoundSteps,
   getTrackArray,
   shuffle,
@@ -60,6 +61,7 @@ export default function App() {
   const [options, setOptions] = useState<GameOptions>({
     mode: 'dice',
     bot: 'medium',
+    botCount: 1,
     laps: 2,
     mom: true,
     head: true,
@@ -91,14 +93,16 @@ export default function App() {
   // Precomputed track arrays & outside lane metadata for corners
   const trackArray = useMemo(() => {
     if (currentCircuit.sections && currentCircuit.sections.length > 0) {
-      return currentCircuit.sections.map((s) => (s === 'L' || s === 'R' ? 'C' : s));
+      return currentCircuit.sections.map((s) =>
+        s === 'L' || s === 'R' ? 'C' : s === 'SL' || s === 'SR' ? 'S' : s
+      );
     }
     return segments.join('').split('') as ('T' | 'S' | 'C')[];
   }, [currentCircuit, segments]);
 
   const outsideLanes = useMemo(() => {
     if (currentCircuit.sections && currentCircuit.sections.length > 0) {
-      return currentCircuit.sections.map((s) => (s === 'L' ? (1 as 0 | 1) : (0 as 0 | 1)));
+      return currentCircuit.sections.map((s) => (s === 'L' || s === 'SL' ? 1 : 0));
     }
     return trackArray.map((c) => (c === 'C' ? (1 as 0 | 1) : (1 as 0 | 1)));
   }, [currentCircuit, trackArray]);
@@ -118,6 +122,10 @@ export default function App() {
     dv: [0, 0],
     phase: 'roll',
     P: [createInitialPlayer(0), createInitialPlayer(1)],
+    extraBots: Array.from(
+      { length: options.bot === 'medium' ? options.botCount - 1 : 0 },
+      (_, idx) => createInitialPlayer(idx % 2)
+    ),
     picks: [null, null],
     log: [
       {
@@ -149,21 +157,22 @@ export default function App() {
   }, [options.mode]);
 
   // Restart / Initialize game
-  const resetGame = useCallback(() => {
+  const resetGame = useCallback((overrides?: Partial<GameOptions>) => {
+    const resetOptions = { ...options, ...overrides };
     const randomStartLead =
-      options.bot === 'medium' ? (Math.random() < 0.5 ? 1 : 0) : 0;
+      resetOptions.bot === 'medium' ? (Math.random() < 0.5 ? 1 : 0) : 0;
 
     const initialLogs: LogEntry[] = [
       {
         id: 'start-0',
-        t: `Race Initialized (${options.mode.toUpperCase()} · ${options.laps} Lap${
-          options.laps > 1 ? 's' : ''
+        t: `Race Initialized (${resetOptions.mode.toUpperCase()} · ${resetOptions.laps} Lap${
+          resetOptions.laps > 1 ? 's' : ''
         })`,
         n: 1,
       },
     ];
 
-    if (options.bot === 'medium') {
+    if (resetOptions.bot === 'medium') {
       initialLogs.push({
         id: 'start-1',
         t: `Pole Position: Player ${randomStartLead + 1}${
@@ -181,6 +190,10 @@ export default function App() {
       dv: [0, 0],
       phase: 'roll',
       P: [createInitialPlayer(0), createInitialPlayer(1)],
+      extraBots: Array.from(
+        { length: resetOptions.bot === 'medium' ? resetOptions.botCount - 1 : 0 },
+        (_, idx) => createInitialPlayer(idx % 2)
+      ),
       picks: [null, null],
       log: initialLogs,
       win: null,
@@ -209,7 +222,7 @@ export default function App() {
       setGameState((prev) => {
         const diceCount = options.mode === 'cards' ? 3 : 5;
         let didReshuffle = false;
-        const nextP = prev.P.map((p) => {
+        const rollPlayer = (p: typeof prev.P[number]) => {
           const copy = { ...p };
           if (options.mode === 'cards') {
             if (copy.deck.length < diceCount) {
@@ -226,7 +239,9 @@ export default function App() {
           }
           copy.used = [];
           return copy;
-        }) as [typeof prev.P[0], typeof prev.P[1]];
+        };
+        const nextP = prev.P.map(rollPlayer) as [typeof prev.P[0], typeof prev.P[1]];
+        const nextExtraBots = prev.extraBots.map(rollPlayer);
 
         const newLogs = [...prev.log];
         newLogs.push({
@@ -244,7 +259,7 @@ export default function App() {
 
         if (shouldDiscard) {
           const leader = getLeaderIndex(nextP, prev.lead);
-          nextP.forEach((p, i) => {
+          [...nextP, ...nextExtraBots].forEach((p, i) => {
             let k = 0;
             p.dice.forEach((d, j) => {
               if (i === leader ? d > p.dice[k] : d < p.dice[k]) {
@@ -252,7 +267,7 @@ export default function App() {
               }
             });
             p.used.push(k);
-            nextDiscardedDice[i] = [k];
+            if (i < 2) nextDiscardedDice[i] = [k];
           });
 
           const leaderVal = nextP[leader].dice[nextDiscardedDice[leader][0]];
@@ -283,6 +298,7 @@ export default function App() {
           log: newLogs,
           discardedCards: didReshuffle ? [[], []] : (prev.discardedCards ?? [[], []]),
           discardedDice: nextDiscardedDice,
+          extraBots: nextExtraBots,
         };
       });
     }, rollDuration);
@@ -520,6 +536,138 @@ export default function App() {
     [options, trackArray, trackLength, endPos, outsideLanes]
   );
 
+  const advanceExtraBots = useCallback(
+    (state: GameState): GameState => {
+      let nextState = state;
+      const playerOrder = nextState.extraBots
+        .map((player, idx) => ({ player, idx }))
+        .sort((a, b) => b.player.pos - a.player.pos)
+        .map(({ idx }) => idx);
+
+      for (const botIdx of playerOrder) {
+        if (nextState.win !== null) break;
+        const playerIdx = botIdx + 2;
+        const player = getPlayerState(nextState, playerIdx);
+        type BotMoveChoice = {
+          die: number;
+          slip: number;
+          mom: number;
+          tgt: { pos: number; lane: number };
+          pos: number;
+          lane: number;
+          score: number;
+        };
+        let bestMove: BotMoveChoice | null = null;
+
+        for (let dieIdx = 0; dieIdx < player.dice.length; dieIdx++) {
+          const die = player.dice[dieIdx];
+          if (player.used.includes(dieIdx)) continue;
+          for (let slip = 0; slip <= Math.min(player.slip, 2); slip++) {
+            for (let mom = 0; mom <= Math.min(player.mom, 2); mom++) {
+              const value = calculateEffectiveValue(
+                playerIdx,
+                { die: dieIdx, slip, mom, tgt: null },
+                die,
+                nextState,
+                options
+              );
+              const reach = computeReach(
+                playerIdx,
+                value,
+                nextState,
+                trackArray,
+                options,
+                outsideLanes
+              );
+              for (const key of Object.keys(reach)) {
+                const [pos, lane] = key.split(':').map(Number);
+                const jumpTarget = getJumpTarget(
+                  playerIdx,
+                  die,
+                  pos,
+                  nextState,
+                  trackArray,
+                  options
+                );
+                const passTarget = jumpTarget
+                  ? 0
+                  : getPassTarget(playerIdx, pos, nextState, trackArray, options);
+                const finalPos = jumpTarget || passTarget || pos;
+                const finalLane =
+                  trackArray[finalPos % trackLength] === 'S' ? 0 : lane;
+                const score = finalPos - (slip + mom) * 0.01;
+                if (!bestMove || score > bestMove.score) {
+                  bestMove = {
+                    die: dieIdx,
+                    slip,
+                    mom,
+                    tgt: { pos, lane },
+                    pos: finalPos,
+                    lane: finalLane,
+                    score,
+                  };
+                }
+              }
+            }
+          }
+        }
+
+        if (!bestMove) continue;
+        const movedPlayer = {
+          ...player,
+          pos: bestMove.pos,
+          lane: bestMove.lane,
+          slip: player.slip - bestMove.slip,
+          mom: player.mom - bestMove.mom,
+          head: options.head ? 0 : player.head,
+          used: [...player.used, bestMove.die],
+          tot: player.tot + baseValue(player.dice[bestMove.die], options.mode),
+          cnt: player.cnt + 1,
+          played:
+            options.mode === 'cards'
+              ? [...player.played, player.dice[bestMove.die]]
+              : player.played,
+        };
+        const extraBots = [...nextState.extraBots];
+        extraBots[botIdx] = movedPlayer;
+        const won = movedPlayer.pos >= endPos;
+        nextState = {
+          ...nextState,
+          extraBots,
+          win: won ? playerIdx : nextState.win,
+          phase: won ? 'over' : nextState.phase,
+          log: [
+            ...nextState.log,
+            {
+              id: `move-${Date.now()}-${playerIdx}`,
+              t: `P${playerIdx + 1} (AI): ${options.mode === 'cards' ? 'card' : 'die'} ${getCardOrDieLabel(
+                player.dice[bestMove.die],
+                options.mode
+              )} → #${movedPlayer.pos}`,
+            },
+            ...(won
+              ? [
+                  {
+                    id: `win-${Date.now()}-${playerIdx}`,
+                    t: `🏆 Player ${playerIdx + 1} crosses the finish line and wins!`,
+                  },
+                ]
+              : []),
+          ],
+        };
+        if (won) sound.playWin();
+      }
+
+      return nextState;
+    },
+    [options, trackArray, outsideLanes, trackLength, endPos]
+  );
+
+  const finishStep = useCallback(
+    (state: GameState) => computeStepFinishedState(advanceExtraBots(state), options),
+    [advanceExtraBots, options]
+  );
+
   // Reveal Phase: leader moves, then trailer enters react phase
   const handleReveal = useCallback(
     (picks: [TargetSelection | null, TargetSelection | null], state: GameState) => {
@@ -623,12 +771,12 @@ export default function App() {
             if (result.winIndex !== null) {
               return result.nextState;
             }
-            return computeStepFinishedState(result.nextState, options);
+            return finishStep(result.nextState);
           });
         }, 700);
       }
     },
-    [options, executeMove, trackArray, outsideLanes]
+    [options, executeMove, trackArray, outsideLanes, finishStep]
   );
 
   // Lock In choice
@@ -698,8 +846,8 @@ export default function App() {
       setGameState(nextState);
       return;
     }
-    setGameState(computeStepFinishedState(nextState, options));
-  }, [gameState, executeMove, options]);
+    setGameState(finishStep(nextState));
+  }, [gameState, executeMove, finishStep]);
 
   // Proceed to next step or next round
   const handleNextStep = useCallback(() => {
@@ -742,6 +890,10 @@ export default function App() {
         dv: [0, 0],
         phase: 'roll',
         P: [createInitialPlayer(0), createInitialPlayer(1)],
+        extraBots: Array.from(
+          { length: options.bot === 'medium' ? options.botCount - 1 : 0 },
+          (_, idx) => createInitialPlayer(idx % 2)
+        ),
         picks: [null, null],
         log: [
           {
@@ -755,7 +907,7 @@ export default function App() {
         discardedCards: [[], []],
       });
     },
-    [options.bot, options.mode]
+    [options.bot, options.botCount, options.mode]
   );
 
   // Update segments from Track Architect

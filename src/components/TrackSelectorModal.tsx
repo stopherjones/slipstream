@@ -119,10 +119,10 @@ export const TrackSelectorModal: React.FC<TrackSelectorModalProps> = ({
               ? circuit.sections!.length
               : circuit.segments.join('').length;
             const cornerCount = isSectionTrack
-              ? circuit.sections!.filter((s) => s === 'L' || s === 'R').length
+              ? circuit.sections!.filter((s) => s === 'L' || s === 'R' || s === 'SL' || s === 'SR').length
               : circuit.segments.join('').split('').filter((c) => c === 'C').length;
             const bottleneckCount = isSectionTrack
-              ? circuit.sections!.filter((s) => s === 'S').length
+              ? circuit.sections!.filter((s) => s === 'S' || s === 'SL' || s === 'SR').length
               : circuit.segments.join('').split('').filter((c) => c === 'S').length;
 
             return (
@@ -248,11 +248,11 @@ export const TrackSelectorModal: React.FC<TrackSelectorModalProps> = ({
                       <span className="text-[9px] text-stone-500 ml-0.5">sp</span>
                     </div>
                     <div className="bg-stone-900/80 rounded-lg p-1.5 border border-stone-800/70">
-                      <span className="block text-[9px] text-stone-500 uppercase font-sans">90° Corners</span>
+                      <span className="block text-[9px] text-stone-500 uppercase font-sans">Corner Sections</span>
                       <span className="text-xs font-bold text-red-400">{cornerCount}</span>
                     </div>
                     <div className="bg-stone-900/80 rounded-lg p-1.5 border border-stone-800/70">
-                      <span className="block text-[9px] text-stone-500 uppercase font-sans">Bottlenecks</span>
+                      <span className="block text-[9px] text-stone-500 uppercase font-sans">Single-width</span>
                       <span className="text-xs font-bold text-amber-400">{bottleneckCount}</span>
                     </div>
                   </div>

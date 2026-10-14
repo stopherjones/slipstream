@@ -5,6 +5,7 @@ export type BotDifficulty = 'off' | 'medium';
 export interface GameOptions {
   mode: GameMode;
   bot: BotDifficulty;
+  botCount: 1 | 2 | 3;
   laps: number;
   mom: boolean;   // Momentum token rule
   head: boolean;  // Headwind rule
@@ -52,7 +53,7 @@ export interface Waypoint {
   y: number;
 }
 
-export type TrackSectionType = 'T' | 'S' | 'L' | 'R';
+export type TrackSectionType = 'T' | 'S' | 'L' | 'R' | 'SL' | 'SR';
 
 export interface TrackCellMeta {
   type: 'T' | 'S' | 'C';
@@ -67,7 +68,7 @@ export interface TrackDefinition {
   difficulty: 'Beginner' | 'Intermediate' | 'Pro';
   lapsDefault: number;
   segments: string[]; // 9 segments fallback
-  sections?: TrackSectionType[]; // Section-based layout: 'T' (twin), 'S' (single), 'L' (45° left), 'R' (45° right)
+  sections?: TrackSectionType[]; // Section-based layout: T/S straights and L/R (double) or SL/SR (single) 45° corners
   cellTypes?: TrackCellMeta[];
   waypoints?: Waypoint[];
 }
@@ -112,6 +113,7 @@ export interface GameState {
   dv: [number, number];
   phase: GamePhase;
   P: [PlayerState, PlayerState];
+  extraBots: PlayerState[];
   picks: [TargetSelection | null, TargetSelection | null];
   log: LogEntry[];
   win: number | null;

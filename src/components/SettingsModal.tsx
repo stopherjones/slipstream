@@ -7,7 +7,7 @@ interface SettingsModalProps {
   onClose: () => void;
   options: GameOptions;
   onChangeOptions: (updater: (prev: GameOptions) => GameOptions) => void;
-  onRestartRace: () => void;
+  onRestartRace: (overrides?: Partial<GameOptions>) => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -22,26 +22,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const setMode = (mode: GameMode) => {
     if (mode === options.mode) return;
     onChangeOptions((prev) => ({ ...prev, mode }));
-    onRestartRace();
+    onRestartRace({ mode });
   };
 
   const setBot = (bot: BotDifficulty) => {
     if (bot === options.bot) return;
     onChangeOptions((prev) => ({ ...prev, bot }));
-    onRestartRace();
+    onRestartRace({ bot });
+  };
+
+  const setBotCount = (botCount: GameOptions['botCount']) => {
+    if (botCount === options.botCount) return;
+    onChangeOptions((prev) => ({ ...prev, botCount }));
+    onRestartRace({ botCount });
   };
 
   const setLaps = (delta: number) => {
     const next = Math.max(1, Math.min(5, options.laps + delta));
     if (next === options.laps) return;
     onChangeOptions((prev) => ({ ...prev, laps: next }));
-    onRestartRace();
+    onRestartRace({ laps: next });
   };
 
   const toggleOption = (key: keyof Pick<GameOptions, 'mom' | 'head' | 'skip' | 'pass'>) => {
-    onChangeOptions((prev) => ({ ...prev, [key]: !prev[key] }));
+    const nextValue = !options[key];
+    onChangeOptions((prev) => ({ ...prev, [key]: nextValue }));
     if (key === 'skip' || key === 'pass') {
-      onRestartRace();
+      onRestartRace({ [key]: nextValue });
     }
   };
 
@@ -96,7 +103,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {/* Opponent */}
           <div className="space-y-1.5">
-            <span className="font-semibold text-white block">Player 2 Opponent</span>
+            <span className="font-semibold text-white block">Opponents</span>
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => setBot('off')}
@@ -118,9 +125,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 }`}
               >
                 <Bot className="w-4 h-4" />
-                <span>🤖 AI Bot (Medium)</span>
+                <span>🤖 AI Mode</span>
               </button>
             </div>
+            {options.bot === 'medium' && (
+              <div className="flex items-center justify-between rounded-xl border border-stone-800 bg-stone-950/60 px-3 py-2">
+                <div>
+                  <span className="font-semibold text-white block">Number of AI bots</span>
+                  <span className="text-[11px] text-stone-400">Race against 1–3 bots</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  {([1, 2, 3] as const).map((count) => (
+                    <button
+                      key={count}
+                      onClick={() => setBotCount(count)}
+                      aria-pressed={options.botCount === count}
+                      className={`h-8 w-9 rounded-lg border text-xs font-bold transition ${
+                        options.botCount === count
+                          ? 'bg-amber-500/20 border-amber-500 text-amber-300'
+                          : 'bg-stone-900 border-stone-700 text-stone-400 hover:text-white'
+                      }`}
+                    >
+                      {count}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Laps */}

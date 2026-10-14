@@ -52,7 +52,7 @@ export const TRACK_PRESETS: TrackDefinition[] = [
     description: 'Tight and twisty street course and centre piece of the Grand Prix calendar.',
     difficulty: 'Intermediate',
     lapsDefault: 2,
-    sections: ["T", "T", "T", "R", "L", "L", "L", "T", "T", "T", "L", "L", "L", "L", "T", "R", "R", "R", "L", "T", "T", "T", "T", "R", "R", "R", "T", "T", "T", "T", "T", "R", "T", "L", "T", "T", "T", "L", "T", "R", "T", "T", "T", "L", "T", "T", "L", "T", "T", "T", "L", "L", "L", "L", "S", "S", "R", "R", "R", "R", "S", "S", "S", "L", "L", "T", "L", "T", "T", "T", "T", "L", "R", "R", "T", "T", "T", "T", "T", "T", "T", "T", "T", "T", "T", "T", "L", "L", "L", "T", "T", "T", "T", "T", "T", "T", "T"],
+    sections: ["T","T","T","T","T","L","R","T","R","L","L","L","T","T","T","L","L","L","T","T","T","T","SR","SR","SR","SL","SL","S","SL","SL","SR","SR","T","T","T","R","R","R","T","T","T","T","T","T","T","T","SR","SR","SL","SL","S","SL","SL","SR","SR","T","T","L","T","T","T","T","L","T","T","L","T","L","L","L","T","T","R","SR","SR","SR","S","S","SL","SL","L","T","T","T","T","T","T","T","R","T","T","T","T","T","T","T","T","L","SR","SR","SL","SL","SL","SL","T","T","T","T","T","T","T","T"],
     segments: [
       'TTTTT',
       'CC',
@@ -103,7 +103,9 @@ export function parseSectionTrackCode(code: string): TrackSectionType[] | null {
     .toUpperCase()
     .split(/[-,\s]+/);
   if (parts.length === 0 || parts[0] === '') return null;
-  const valid = parts.every((p) => p === 'T' || p === 'S' || p === 'L' || p === 'R');
+  const valid = parts.every((p) =>
+    p === 'T' || p === 'S' || p === 'L' || p === 'R' || p === 'SL' || p === 'SR'
+  );
   if (!valid) return null;
   return parts as TrackSectionType[];
 }

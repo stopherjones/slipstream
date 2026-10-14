@@ -87,6 +87,7 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
   const [simResults, setSimResults] = useState<string | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
   const [forceFuzzyClose, setForceFuzzyClose] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
   const [savedTracksList, setSavedTracksList] = useState<SavedTrackItem[]>(() => loadSavedCustomTracks());
 
   // Compute live geometry with seamless fuzzy matching
@@ -98,9 +99,9 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
   // Statistics
   const totalPieces = sections.length;
   const twinCount = sections.filter((s) => s === 'T').length;
-  const singleCount = sections.filter((s) => s === 'S').length;
-  const leftCount = sections.filter((s) => s === 'L').length;
-  const rightCount = sections.filter((s) => s === 'R').length;
+  const singleCount = sections.filter((s) => s === 'S' || s === 'SL' || s === 'SR').length;
+  const leftCount = sections.filter((s) => s === 'L' || s === 'SL').length;
+  const rightCount = sections.filter((s) => s === 'R' || s === 'SR').length;
 
   if (!isOpen) return null;
 
@@ -121,6 +122,7 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
     sound.playSelect();
     setSections([]);
     setForceFuzzyClose(false);
+    setConfirmClear(false);
   };
 
   const handleAutoComplete = () => {
@@ -296,8 +298,10 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
     setTimeout(() => {
       try {
         const dummySegments = exportSegments();
-        const dummyArray = sections.map((s) => (s === 'L' || s === 'R' ? 'C' : s));
-        const outLanes = sections.map((s) => (s === 'L' ? (1 as 0 | 1) : (0 as 0 | 1)));
+        const dummyArray = sections.map((s) =>
+          s === 'L' || s === 'R' ? 'C' : s === 'SL' || s === 'SR' ? 'S' : s
+        );
+        const outLanes = sections.map((s) => (s === 'L' || s === 'SL' ? 1 : 0) as 0 | 1);
         const endPos = getEndPosition(dummySegments, lapsInput);
 
         let p1Wins = 0;
@@ -491,7 +495,7 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
                   {/* Render Track Cells */}
                   {geometry.cells.map((cell) => {
                     const isBottleneck = cell.type === 'S';
-                    const isCorner = cell.type === 'C';
+                    const isWideCorner = cell.type === 'C';
 
                     return (
                       <g key={`cell-${cell.idx}`}>
@@ -521,7 +525,7 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
                         <polygon
                           points={cell.poly0}
                           fill={
-                            isCorner && cell.outsideLane === 0
+                            isWideCorner && cell.outsideLane === 0
                               ? 'url(#architectHatch)'
                               : isBottleneck
                               ? '#3f2f21'
@@ -536,7 +540,7 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
                           <polygon
                             points={cell.poly1}
                             fill={
-                              isCorner && cell.outsideLane === 1
+                              isWideCorner && cell.outsideLane === 1
                                 ? 'url(#architectHatch)'
                                 : '#1a1f28'
                             }
@@ -560,7 +564,7 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
                         )}
 
                         {/* Pip cost badge for outside corner */}
-                        {isCorner && (
+                        {isWideCorner && (
                           <circle
                             cx={cell.outsideLane === 0 ? cell.center0[0] : cell.center1[0]}
                             cy={cell.outsideLane === 0 ? cell.center0[1] : cell.center1[1]}
@@ -570,7 +574,7 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
                             strokeWidth="0.5"
                           />
                         )}
-                        {isCorner && (
+                        {isWideCorner && (
                           <text
                             x={cell.outsideLane === 0 ? cell.center0[0] : cell.center1[0]}
                             y={cell.outsideLane === 0 ? cell.center0[1] : cell.center1[1]}
@@ -724,7 +728,7 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
                 </div>
                 <div className="flex items-center gap-3 font-mono text-[11px] text-stone-300">
                   <span>Straights: {twinCount}</span>
-                  <span>Bottlenecks: {singleCount}</span>
+                  <span>Single-width: {singleCount}</span>
                   <span>Corners: {leftCount + rightCount}</span>
                 </div>
               </div>
@@ -740,7 +744,7 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {/* 1. Twin Straight */}
                   <button
                     onClick={() => handleAddPiece('T')}
@@ -800,6 +804,36 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
                       <div className="text-[10px] text-violet-300/80">Inside 1p / Out 2p</div>
                     </div>
                   </button>
+
+                  {/* 5. Single Left Corner */}
+                  <button
+                    onClick={() => handleAddPiece('SL')}
+                    className="p-2.5 rounded-xl bg-amber-950/40 hover:bg-amber-900/50 border border-amber-500/40 text-left active:scale-[0.98] transition flex flex-col justify-between group"
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-base font-bold text-amber-400 font-mono">SL</span>
+                      <CornerUpLeft className="w-4 h-4 text-amber-400 group-hover:-translate-y-0.5 transition" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white">Single Left Corner</div>
+                      <div className="text-[10px] text-amber-300/80">1 lane · 1 pip</div>
+                    </div>
+                  </button>
+
+                  {/* 6. Single Right Corner */}
+                  <button
+                    onClick={() => handleAddPiece('SR')}
+                    className="p-2.5 rounded-xl bg-amber-950/40 hover:bg-amber-900/50 border border-amber-500/40 text-left active:scale-[0.98] transition flex flex-col justify-between group"
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-base font-bold text-amber-400 font-mono">SR</span>
+                      <CornerUpRight className="w-4 h-4 text-amber-400 group-hover:translate-x-0.5 transition" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white">Single Right Corner</div>
+                      <div className="text-[10px] text-amber-300/80">1 lane · 1 pip</div>
+                    </div>
+                  </button>
                 </div>
               </div>
 
@@ -814,13 +848,31 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
                     <RotateCcw className="w-3.5 h-3.5" />
                     <span>Undo</span>
                   </button>
-                  <button
-                    onClick={handleClearBlank}
-                    className="px-2.5 py-1.5 rounded-lg bg-red-950/40 hover:bg-red-900/60 border border-red-500/30 text-xs font-semibold text-red-300 flex items-center gap-1 transition"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Clear to Blank</span>
-                  </button>
+                  {confirmClear ? (
+                    <div className="flex items-center gap-1" aria-live="polite">
+                      <span className="text-[11px] text-red-300">Clear the whole track?</span>
+                      <button
+                        onClick={handleClearBlank}
+                        className="px-2.5 py-1.5 rounded-lg bg-red-700 hover:bg-red-600 text-xs font-bold text-white transition"
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        onClick={() => setConfirmClear(false)}
+                        className="px-2.5 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-xs font-semibold text-stone-200 transition"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmClear(true)}
+                      className="px-2.5 py-1.5 rounded-lg bg-red-950/40 hover:bg-red-900/60 border border-red-500/30 text-xs font-semibold text-red-300 flex items-center gap-1 transition"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Clear to Blank</span>
+                    </button>
+                  )}
                   <button
                     onClick={handleAutoComplete}
                     disabled={geometry.isClosed}

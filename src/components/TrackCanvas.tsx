@@ -93,7 +93,9 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
 
   const trackArray = useMemo(() => {
     if (isSectionTrack) {
-      return track.sections!.map((s) => (s === 'L' || s === 'R' ? 'C' : s));
+      return track.sections!.map((s) =>
+        s === 'L' || s === 'R' ? 'C' : s === 'SL' || s === 'SR' ? 'S' : s
+      );
     }
     return segments.join('').split('') as ('T' | 'S' | 'C')[];
   }, [isSectionTrack, track.sections, segments]);
@@ -168,35 +170,36 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
   );
 
   // Animated Car Rendering State: smooth movement along the track
-  const [displayCars, setDisplayCars] = useState<[
-    { x: number; y: number; angle: number },
-    { x: number; y: number; angle: number }
-  ]>(() => [
-    getSpaceCoordsAndAngle(gameState.P[0].pos, gameState.P[0].lane),
-    getSpaceCoordsAndAngle(gameState.P[1].pos, gameState.P[1].lane),
-  ]);
-
-  const prevCarsRef = useRef<[
-    { pos: number; lane: number },
-    { pos: number; lane: number }
-  ]>([
-    { pos: gameState.P[0].pos, lane: gameState.P[0].lane },
-    { pos: gameState.P[1].pos, lane: gameState.P[1].lane },
-  ]);
+  const gameCars = [...gameState.P, ...gameState.extraBots];
+  const leaderCarIdx = gameCars.reduce(
+    (leader, car, idx) => (car.pos > gameCars[leader].pos ? idx : leader),
+    0
+  );
+  const [displayCars, setDisplayCars] = useState(() =>
+    gameCars.map((player) => getSpaceCoordsAndAngle(player.pos, player.lane))
+  );
+  const prevCarsRef = useRef(
+    gameCars.map(({ pos, lane }) => ({ pos, lane }))
+  );
 
   const animFrameRef = useRef<number | null>(null);
 
   // Smoothly animate car movement along the track waypoints when positions update
   useEffect(() => {
-    const p0 = gameState.P[0];
-    const p1 = gameState.P[1];
-    const prev0 = prevCarsRef.current[0];
-    const prev1 = prevCarsRef.current[1];
-
-    const p0Changed = p0.pos !== prev0.pos || p0.lane !== prev0.lane;
-    const p1Changed = p1.pos !== prev1.pos || p1.lane !== prev1.lane;
-
-    if (!p0Changed && !p1Changed) return;
+    const currentCars = gameCars.map(({ pos, lane }) => ({ pos, lane }));
+    if (currentCars.length !== prevCarsRef.current.length) {
+      prevCarsRef.current = currentCars;
+      setDisplayCars(
+        gameCars.map((player) => getSpaceCoordsAndAngle(player.pos, player.lane))
+      );
+      return;
+    }
+    const changed = currentCars.map(
+      (car, idx) =>
+        car.pos !== prevCarsRef.current[idx].pos ||
+        car.lane !== prevCarsRef.current[idx].lane
+    );
+    if (!changed.some(Boolean)) return;
 
     // Helper: build waypoint sequence from start to destination space
     const buildWaypoints = (
@@ -217,19 +220,23 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
       return wps;
     };
 
-    const wps0 = p0Changed ? buildWaypoints(prev0.pos, prev0.lane, p0.pos, p0.lane) : [];
-    const wps1 = p1Changed ? buildWaypoints(prev1.pos, prev1.lane, p1.pos, p1.lane) : [];
-
-    prevCarsRef.current = [
-      { pos: p0.pos, lane: p0.lane },
-      { pos: p1.pos, lane: p1.lane },
-    ];
+    const waypoints = gameCars.map((player, idx) =>
+      changed[idx]
+        ? buildWaypoints(
+            prevCarsRef.current[idx].pos,
+            prevCarsRef.current[idx].lane,
+            player.pos,
+            player.lane
+          )
+        : []
+    );
+    prevCarsRef.current = currentCars;
 
     if (animFrameRef.current) {
       cancelAnimationFrame(animFrameRef.current);
     }
 
-    const maxWpLen = Math.max(wps0.length, wps1.length);
+    const maxWpLen = Math.max(...waypoints.map((wps) => wps.length), 1);
     const duration = Math.min(850, Math.max(240, (maxWpLen - 1) * 85));
     const startTime = performance.now();
 
@@ -262,14 +269,17 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
       // Cubic ease-out
       const eased = 1 - Math.pow(1 - progress, 3);
 
-      setDisplayCars((prev) => [
-        p0Changed
-          ? sampleWaypoint(wps0, eased, getSpaceCoordsAndAngle(p0.pos, p0.lane))
-          : prev[0],
-        p1Changed
-          ? sampleWaypoint(wps1, eased, getSpaceCoordsAndAngle(p1.pos, p1.lane))
-          : prev[1],
-      ]);
+      setDisplayCars((prev) =>
+        gameCars.map((player, idx) =>
+          changed[idx]
+            ? sampleWaypoint(
+                waypoints[idx],
+                eased,
+                getSpaceCoordsAndAngle(player.pos, player.lane)
+              )
+            : prev[idx] ?? getSpaceCoordsAndAngle(player.pos, player.lane)
+        )
+      );
 
       if (progress < 1) {
         animFrameRef.current = requestAnimationFrame(animateCars);
@@ -284,10 +294,7 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
       }
     };
   }, [
-    gameState.P[0].pos,
-    gameState.P[0].lane,
-    gameState.P[1].pos,
-    gameState.P[1].lane,
+    gameCars,
     getSpaceCoordsAndAngle,
   ]);
 
@@ -648,7 +655,7 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
             {/* Render Section Cells */}
             {sectionGeo.cells.map((cell) => {
               const isBottleneck = cell.type === 'S';
-              const isCorner = cell.type === 'C';
+              const isCorner = cell.sectionType !== 'T' && cell.sectionType !== 'S';
               const lanesList = isBottleneck ? [0] : [0, 1];
 
               return (
@@ -786,14 +793,14 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
 
             {/* Animated Car SVGs Layer (Blue Hatchback for P1, Red Saloon for P2) */}
             <g key="sec-animated-cars-layer">
-              {[0, 1].map((q) => (
+              {gameCars.map((_, q) => (
                 <CarToken
                   key={`sec-anim-car-p${q}`}
-                  cx={displayCars[q].x}
-                  cy={displayCars[q].y}
-                  angle={displayCars[q].angle}
+                  cx={displayCars[q]?.x ?? getSpaceCoordsAndAngle(gameCars[q].pos, gameCars[q].lane).x}
+                  cy={displayCars[q]?.y ?? getSpaceCoordsAndAngle(gameCars[q].pos, gameCars[q].lane).y}
+                  angle={displayCars[q]?.angle ?? getSpaceCoordsAndAngle(gameCars[q].pos, gameCars[q].lane).angle}
                   playerIdx={q}
-                  isLeader={gameState.lead === q}
+                  isLeader={leaderCarIdx === q}
                 />
               ))}
             </g>
@@ -842,7 +849,12 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
                   textAnchor="middle"
                   className="font-black text-[12px] fill-amber-400 font-sans tracking-wide"
                 >
-                  🏁 {gameState.win === 0 ? 'PLAYER 1' : options.bot === 'medium' ? 'AI BOT' : 'PLAYER 2'} WINS! 🏆
+                  🏁 {gameState.win === 0
+                    ? 'PLAYER 1'
+                    : options.bot === 'off' && gameState.win === 1
+                      ? 'PLAYER 2'
+                      : `AI BOT ${gameState.win}`}
+                  {' WINS! 🏆'}
                 </text>
               </g>
             )}
@@ -1154,14 +1166,14 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
 
           {/* Animated Car SVGs Layer for Rectilinear Track */}
           <g key="rect-animated-cars-layer">
-            {[0, 1].map((q) => (
+            {gameCars.map((_, q) => (
               <CarToken
                 key={`rect-anim-car-p${q}`}
-                cx={displayCars[q].x}
-                cy={displayCars[q].y}
-                angle={displayCars[q].angle}
+                cx={displayCars[q]?.x ?? getSpaceCoordsAndAngle(gameCars[q].pos, gameCars[q].lane).x}
+                cy={displayCars[q]?.y ?? getSpaceCoordsAndAngle(gameCars[q].pos, gameCars[q].lane).y}
+                angle={displayCars[q]?.angle ?? getSpaceCoordsAndAngle(gameCars[q].pos, gameCars[q].lane).angle}
                 playerIdx={q}
-                isLeader={gameState.lead === q}
+                isLeader={leaderCarIdx === q}
               />
             ))}
           </g>
@@ -1188,7 +1200,12 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
                 textAnchor="middle"
                 className="font-black text-[12px] fill-amber-400 font-sans tracking-wide"
               >
-                🏁 {gameState.win === 0 ? 'PLAYER 1' : options.bot === 'medium' ? 'AI BOT' : 'PLAYER 2'} WINS! 🏆
+                🏁 {gameState.win === 0
+                  ? 'PLAYER 1'
+                  : options.bot === 'off' && gameState.win === 1
+                    ? 'PLAYER 2'
+                    : `AI BOT ${gameState.win}`}
+                {' WINS! 🏆'}
               </text>
             </g>
           )}

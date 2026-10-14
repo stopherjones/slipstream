@@ -79,6 +79,10 @@ export function getLeaderIndex(P: [PlayerState, PlayerState], lastLead: number):
   return lastLead;
 }
 
+export function getPlayerState(gameState: GameState, playerIdx: number): PlayerState {
+  return playerIdx < 2 ? gameState.P[playerIdx] : gameState.extraBots[playerIdx - 2];
+}
+
 export function getActivePlayerIndex(gameState: GameState): number {
   if (gameState.phase === 'pick0') return 0;
   if (gameState.phase === 'react') return gameState.tr;
@@ -94,15 +98,17 @@ export function calculateSpeed(
   gameState: GameState,
   options: GameOptions
 ): number {
-  const p = gameState.P[playerIdx];
-  const otherIdx = 1 - playerIdx;
+  const p = getPlayerState(gameState, playerIdx);
+  const opponents = [...gameState.P, ...gameState.extraBots].filter((_, idx) => idx !== playerIdx);
   const h = options.head ? p.head : 0;
   const b = baseValue(die, options.mode);
 
   if (options.mode === 'cards') {
     return b >= 5 ? Math.max(4, b - h) : b;
   } else {
-    return options.head && b >= 4 && p.pos > gameState.P[otherIdx].pos ? b - 1 : b;
+    return options.head && b >= 4 && opponents.some((opponent) => opponent.pos < p.pos)
+      ? b - 1
+      : b;
   }
 }
 
@@ -125,8 +131,8 @@ export function computeReach(
   options: GameOptions,
   outsideLanes?: (0 | 1)[]
 ): ReachMap {
-  const p = gameState.P[playerIdx];
-  const opp = gameState.P[1 - playerIdx];
+  const p = getPlayerState(gameState, playerIdx);
+  const opponents = [...gameState.P, ...gameState.extraBots].filter((_, idx) => idx !== playerIdx);
   const reach: ReachMap = {};
   const endPos = options.laps * track.length;
 
@@ -142,7 +148,7 @@ export function computeReach(
       const outLane = outsideLanes ? outsideLanes[nextPos % track.length] ?? 1 : 1;
       const cost = cellType === 'C' && ln === outLane ? 2 : 1;
 
-      if (cost > b || (opp.pos === nextPos && opp.lane === ln)) {
+      if (cost > b || opponents.some((opponent) => opponent.pos === nextPos && opponent.lane === ln)) {
         break;
       }
       pos = nextPos;
@@ -176,7 +182,10 @@ export function getJumpTarget(
   options: GameOptions
 ): number {
   if (options.mode !== 'cards' || die < 10) return 0;
-  const opp = gameState.P[1 - playerIdx];
+  const opp = [...gameState.P, ...gameState.extraBots]
+    .filter((player, idx) => idx !== playerIdx && player.pos > pos)
+    .sort((a, b) => a.pos - b.pos)[0];
+  if (!opp) return 0;
   const gap = opp.pos - pos;
   if (
     gap >= 1 &&
@@ -196,9 +205,12 @@ export function getPassTarget(
   track: string[],
   options: GameOptions
 ): number {
-  const opp = gameState.P[1 - playerIdx];
-  const fromPos = gameState.P[playerIdx].pos;
+  const fromPos = getPlayerState(gameState, playerIdx).pos;
+  const opp = [...gameState.P, ...gameState.extraBots]
+    .filter((player, idx) => idx !== playerIdx && player.pos > fromPos)
+    .sort((a, b) => a.pos - b.pos)[0];
   const endPos = options.laps * track.length;
+  if (!opp) return 0;
   if (
     options.pass &&
     fromPos < opp.pos &&

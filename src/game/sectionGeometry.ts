@@ -4,11 +4,11 @@
  * Section types:
  * - 'T': Twin track straight (2-lane, normal cost)
  * - 'S': Single track straight (1-lane bottleneck)
- * - 'L': Left corner section (45° turn, single cell inside, double space outside)
- * - 'R': Right corner section (45° turn, single cell inside, double space outside)
+ * - 'L'/'R': Double-width left/right corner sections
+ * - 'SL'/'SR': Single-width left/right corner sections
  */
 
-export type TrackSectionType = 'T' | 'S' | 'L' | 'R';
+export type TrackSectionType = 'T' | 'S' | 'L' | 'R' | 'SL' | 'SR';
 
 export interface KerbSegment {
   poly: string;
@@ -87,6 +87,9 @@ export function computeSectionTrackGeometry(
   sections: TrackSectionType[],
   options?: GeometryOptions
 ): SectionTrackGeometry {
+  const isSingleWidthSection = (section: TrackSectionType) =>
+    section === 'S' || section === 'SL' || section === 'SR';
+
   const finishLine = {
     x1: 0,
     y1: -HALF_ROAD,
@@ -147,7 +150,7 @@ export function computeSectionTrackGeometry(
       endX = startX + Math.cos(startHeading) * STRAIGHT_LEN;
       endY = startY + Math.sin(startHeading) * STRAIGHT_LEN;
       endHeading = startHeading;
-    } else if (sec === 'L') {
+    } else if (sec === 'L' || sec === 'SL') {
       // 45° left turn (counter-clockwise on grid: towards -Y)
       const R = CORNER_RADIUS;
       const nLx = Math.sin(startHeading);
@@ -159,7 +162,7 @@ export function computeSectionTrackGeometry(
       endX = cx + R * Math.cos(phi1);
       endY = cy + R * Math.sin(phi1);
       endHeading = startHeading - CORNER_ANGLE;
-    } else if (sec === 'R') {
+    } else if (sec === 'R' || sec === 'SR') {
       // 45° right turn (clockwise on grid: towards +Y)
       const R = CORNER_RADIUS;
       const nRx = -Math.sin(startHeading);
@@ -259,12 +262,36 @@ export function computeSectionTrackGeometry(
     if (sec === 'S') {
       // Single track bottleneck
       const BW = LANE_WIDTH * 0.8;
-      const p1 = [sX + nLs[0] * BW, sY + nLs[1] * BW];
-      const p2 = [eX + nLe[0] * BW, eY + nLe[1] * BW];
-      const p3 = [eX + nRe[0] * BW, eY + nRe[1] * BW];
-      const p4 = [sX + nRs[0] * BW, sY + nRs[1] * BW];
+      const hasWideEntry = !isSingleWidthSection(sections[(idx - 1 + N) % N]);
+      const hasWideExit = !isSingleWidthSection(sections[(idx + 1) % N]);
+      const crossSections: { t: number; width: number }[] = [
+        { t: 0, width: hasWideEntry ? LANE_WIDTH : BW },
+      ];
 
-      const poly0 = `${p1[0].toFixed(1)},${p1[1].toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)} ${p3[0].toFixed(1)},${p3[1].toFixed(1)} ${p4[0].toFixed(1)},${p4[1].toFixed(1)}`;
+      if (hasWideEntry) {
+        crossSections.push({ t: 1 / 3, width: BW });
+      }
+      if (hasWideExit) {
+        crossSections.push({ t: 2 / 3, width: BW });
+      }
+      crossSections.push({ t: 1, width: hasWideExit ? LANE_WIDTH : BW });
+
+      const leftEdge: [number, number][] = [];
+      const rightEdge: [number, number][] = [];
+      for (const { t, width } of crossSections) {
+        const x = sX + (eX - sX) * t;
+        const y = sY + (eY - sY) * t;
+        const heading = sHead + (eHead - sHead) * t;
+        const normalX = Math.sin(heading);
+        const normalY = -Math.cos(heading);
+        leftEdge.push([x + normalX * width, y + normalY * width]);
+        rightEdge.push([x - normalX * width, y - normalY * width]);
+      }
+
+      const poly0 = leftEdge
+        .map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`)
+        .concat([...rightEdge].reverse().map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`))
+        .join(' ');
 
       cells.push({
         idx,
@@ -313,10 +340,17 @@ export function computeSectionTrackGeometry(
         dividerLine: { x1: sX, y1: sY, x2: eX, y2: eY },
       });
     } else {
-      // 45° Corner ('L' or 'R')
+      // 45° corner
       // Rendered with cubic Hermite spline guaranteeing C1 tangent continuity
       // flush against adjacent straight or corner sections!
-      const isLeft = sec === 'L';
+      const isSingleCorner = sec === 'SL' || sec === 'SR';
+      const isLeft = sec === 'L' || sec === 'SL';
+      const entryWidth = isSingleWidthSection(sections[(idx - 1 + N) % N])
+        ? LANE_WIDTH * 0.8
+        : LANE_WIDTH;
+      const exitWidth = isSingleWidthSection(sections[(idx + 1) % N])
+        ? LANE_WIDTH * 0.8
+        : LANE_WIDTH;
       const M = CORNER_RADIUS * CORNER_ANGLE; // Tangent scale ~36.1
       const T0x = Math.cos(sHead) * M;
       const T0y = Math.sin(sHead) * M;
@@ -361,7 +395,14 @@ export function computeSectionTrackGeometry(
         const nRx = -ty;
         const nRy = tx;
 
-        const W = LANE_WIDTH;
+        const narrowWidth = LANE_WIDTH * 0.8;
+        const W = isSingleCorner
+          ? u < 1 / 3
+            ? entryWidth + (narrowWidth - entryWidth) * (u * 3)
+            : u > 2 / 3
+              ? narrowWidth + (exitWidth - narrowWidth) * ((u - 2 / 3) * 3)
+              : narrowWidth
+          : LANE_WIDTH;
         ptsLeft.push([px + nLx * W, py + nLy * W]);
         ptsCenter.push([px, py]);
         ptsRight.push([px + nRx * W, py + nRy * W]);
@@ -419,12 +460,12 @@ export function computeSectionTrackGeometry(
       // Midpoint centers for car placement (sampled around mid step s = 3, 4)
       const midIdx = Math.floor(STEPS / 2);
       const c0: [number, number] = [
-        (ptsLeft[midIdx][0] + ptsCenter[midIdx][0]) / 2,
-        (ptsLeft[midIdx][1] + ptsCenter[midIdx][1]) / 2,
+        isSingleCorner ? ptsCenter[midIdx][0] : (ptsLeft[midIdx][0] + ptsCenter[midIdx][0]) / 2,
+        isSingleCorner ? ptsCenter[midIdx][1] : (ptsLeft[midIdx][1] + ptsCenter[midIdx][1]) / 2,
       ];
       const c1: [number, number] = [
-        (ptsCenter[midIdx][0] + ptsRight[midIdx][0]) / 2,
-        (ptsCenter[midIdx][1] + ptsRight[midIdx][1]) / 2,
+        isSingleCorner ? ptsCenter[midIdx][0] : (ptsCenter[midIdx][0] + ptsRight[midIdx][0]) / 2,
+        isSingleCorner ? ptsCenter[midIdx][1] : (ptsCenter[midIdx][1] + ptsRight[midIdx][1]) / 2,
       ];
 
       // Divider line splitting the outside lane into two distinct spaces at midpoint (step = 4)
@@ -437,18 +478,23 @@ export function computeSectionTrackGeometry(
 
       cells.push({
         idx,
-        type: 'C',
-        sectionType: isLeft ? 'L' : 'R',
+        type: isSingleCorner ? 'S' : 'C',
+        sectionType: sec,
         outsideLane: isLeft ? 1 : 0, // In left turn, lane 1 (right) is outside; in right turn, lane 0 (left) is outside
-        poly0,
-        poly1,
+        poly0: isSingleCorner
+          ? ptsLeft
+              .map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`)
+              .concat([...ptsRight].reverse().map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`))
+              .join(' ')
+          : poly0,
+        poly1: isSingleCorner ? '' : poly1,
         center0: c0,
         center1: c1,
         angle: avgHeadDeg,
         kerbPoly,
         kerbSide: isLeft ? 'left' : 'right',
         kerbSegments,
-        cornerOutsideDivider,
+        ...(isSingleCorner ? {} : { cornerOutsideDivider }),
       });
     }
   }
