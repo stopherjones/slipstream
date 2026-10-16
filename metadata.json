@@ -1,6 +1,6 @@
 {
   "name": "Slipstream Tactical Racer",
-  "description": "A fast-paced 2-player tactical dice and card racing game with slipstream drafting, momentum management, and bottleneck tactics.",
+  "description": "A fast-paced tactical dice and card racing game with 4-player AI grid, slipstream drafting, momentum management, and corner tactics.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

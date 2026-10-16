@@ -5,42 +5,42 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  GameMode,
+  BotDifficulty,
+  ChampionshipState,
   GameOptions,
   GameState,
   LogEntry,
   ReachMap,
   TargetSelection,
   TrackDefinition,
+  TrackSectionType,
 } from './types/game';
 import {
-  baseValue,
   calculateEffectiveValue,
   calculateSpeed,
-  computeBotLead,
-  computeBotReact,
-  computeBotTrail,
+  comparePlayerPositions,
+  computeBotMove,
   computeReach,
   computeStepFinishedState,
   createEmptySelection,
   createInitialPlayer,
-  getActivePlayerIndex,
-  getCardOrDieLabel,
   getEndPosition,
-  getJumpTarget,
+  getInsideLane,
   getLeaderIndex,
   getPassTarget,
-  getPlayerState,
   getRoundSteps,
   getTrackArray,
+  getTrackLength,
+  getTurnOrder,
   shuffle,
-  CARDS,
   MOM_VAL,
   SLIP_VAL,
 } from './game/engine';
 import {
   DEFAULT_TRACK_SEGMENTS,
+  getAllAvailableTracks,
   getCircuitById,
+  getDailyTrack,
   loadCurrentCircuitId,
   loadStoredTrack,
   saveCurrentCircuitId,
@@ -55,47 +55,97 @@ import { SettingsModal } from './components/SettingsModal';
 import { TrackEditorModal } from './components/TrackEditorModal';
 import { TrackSelectorModal } from './components/TrackSelectorModal';
 import { RaceLogDrawer } from './components/RaceLogDrawer';
+import { HomePage } from './components/HomePage';
+import { ChampionshipStandingsModal } from './components/ChampionshipStandingsModal';
+
+/**
+ * Creates unique, randomized starting grid positions behind the start / finish line.
+ * All players line up in their own cell, in a random allocation, behind the start/finish line.
+ */
+function createStartingGrid(
+  numPlayers: number,
+  sections: TrackSectionType[] | undefined,
+  trackLength: number
+) {
+  const slots: { pos: number; lane: 0 | 1 }[] = [];
+  let row = -1;
+
+  while (slots.length < numPlayers) {
+    const inside = getInsideLane(row, sections, trackLength);
+    const outside = (1 - inside) as 0 | 1;
+
+    // Both cells at position 'row' are available behind the finish line
+    slots.push({ pos: row, lane: inside });
+    if (slots.length < numPlayers) {
+      slots.push({ pos: row, lane: outside });
+    }
+    row--;
+  }
+
+  // Random allocation of drivers to starting slots
+  const shuffledSlots = shuffle(slots.slice(0, numPlayers));
+  return shuffledSlots.map((slot) => createInitialPlayer(slot.pos, slot.lane));
+}
 
 export default function App() {
-  // Game options
+  // Navigation Screen State ('home' vs 'race')
+  const [screen, setScreen] = useState<'home' | 'race'>('home');
+
+  // Game options (pure dice game, no cards, no headwind)
   const [options, setOptions] = useState<GameOptions>({
-    mode: 'dice',
     bot: 'medium',
     botCount: 1,
     laps: 2,
     mom: true,
-    head: true,
     skip: true,
-    pass: false,
+    pass: true,
   });
 
-  // Current Circuit (Monza, Silverstone, Suzuka, Monaco, etc.)
-  const [currentCircuit, setCurrentCircuit] = useState<TrackDefinition>(() =>
-    getCircuitById(loadCurrentCircuitId())
-  );
+  // Championship state
+  const [championship, setChampionship] = useState<ChampionshipState | null>(null);
+  const [championshipModalOpen, setChampionshipModalOpen] = useState(false);
+  const [lastRaceOrder, setLastRaceOrder] = useState<number[] | undefined>(undefined);
+  const [completedRaceIndex, setCompletedRaceIndex] = useState<number | undefined>(undefined);
 
-  // Track segments (9 rectilinear segments)
-  const [segments, setSegments] = useState<string[]>(
-    () => currentCircuit.segments ?? loadStoredTrack('dice')
-  );
-
-  // Sound enabled
-  const [soundEnabled, setSoundEnabled] = useState(sound.enabled);
-
-  // Modals & Drawers
-  const [trackSelectorOpen, setTrackSelectorOpen] = useState(false);
+  // Sound & modal UI states
+  const [soundEnabled, setSoundEnabled] = useState(() => sound.enabled);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
+  const [trackSelectorOpen, setTrackSelectorOpen] = useState(false);
   const [editorActive, setEditorActive] = useState(false);
 
-  // Precomputed track arrays & outside lane metadata for corners
+  // Active circuit
+  const [currentCircuit, setCurrentCircuit] = useState<TrackDefinition>(() => {
+    const savedId = loadCurrentCircuitId();
+    return getCircuitById(savedId);
+  });
+
+  // All available circuits (standard presets + custom saved tracks)
+  const [availableTracks, setAvailableTracks] = useState<TrackDefinition[]>(() =>
+    getAllAvailableTracks()
+  );
+
+  // Refresh available tracks when selector or editor opens
+  const refreshAvailableTracks = useCallback(() => {
+    setAvailableTracks(getAllAvailableTracks());
+  }, []);
+
+  // Daily Track for today
+  const dailyTrack = useMemo(() => getDailyTrack(), []);
+
+  // Track representation
+  const [segments, setSegments] = useState<string[]>(() => {
+    return loadStoredTrack('dice');
+  });
+
   const trackArray = useMemo(() => {
+    if (currentCircuit.cellTypes && currentCircuit.cellTypes.length > 0) {
+      return currentCircuit.cellTypes.map((c) => c.type);
+    }
     if (currentCircuit.sections && currentCircuit.sections.length > 0) {
-      return currentCircuit.sections.map((s) =>
-        s === 'L' || s === 'R' ? 'C' : s === 'SL' || s === 'SR' ? 'S' : s
-      );
+      return currentCircuit.sections.map((s) => (s === 'T' ? 'T' : s === 'S' ? 'S' : 'C'));
     }
     return segments.join('').split('') as ('T' | 'S' | 'C')[];
   }, [currentCircuit, segments]);
@@ -106,39 +156,44 @@ export default function App() {
     }
     return trackArray.map((c) => (c === 'C' ? (1 as 0 | 1) : (1 as 0 | 1)));
   }, [currentCircuit, trackArray]);
+
   const trackLength = trackArray.length;
   const endPos = useMemo(
     () => options.laps * trackLength,
     [options.laps, trackLength]
   );
 
-  // Game state
-  const [gameState, setGameState] = useState<GameState>(() => ({
-    round: 1,
-    step: 0,
-    lead: 0,
-    tr: 1,
-    spd: [0, 0],
-    dv: [0, 0],
-    phase: 'roll',
-    P: [createInitialPlayer(0), createInitialPlayer(1)],
-    extraBots: Array.from(
-      { length: options.bot === 'medium' ? options.botCount - 1 : 0 },
-      (_, idx) => createInitialPlayer(idx % 2)
-    ),
-    picks: [null, null],
-    log: [
-      {
-        id: 'init-1',
-        t: `🏁 ${currentCircuit.name} ready (${trackLength} spaces · ${currentCircuit.country}). Roll dice to start!`,
-        n: 1,
-      },
-    ],
-    win: null,
-    sel: createEmptySelection(),
-    discardedCards: [[], []],
-    discardedDice: [[], []],
-  }));
+  // Initialize starting lineup behind the finish line
+  const [gameState, setGameState] = useState<GameState>(() => {
+    const numPlayers = options.bot === 'medium' ? 1 + options.botCount : 2;
+    const initialPlayers = createStartingGrid(numPlayers, currentCircuit.sections, trackLength);
+    const turnOrder = getTurnOrder(initialPlayers, currentCircuit.sections, trackLength);
+    const initialLead = turnOrder[0];
+
+    return {
+      round: 1,
+      step: 0,
+      turnIdx: 0,
+      turnOrder,
+      lead: initialLead,
+      tr: initialLead,
+      spd: initialPlayers.map(() => 0),
+      dv: initialPlayers.map(() => 0),
+      phase: 'roll',
+      P: initialPlayers,
+      picks: initialPlayers.map(() => null),
+      log: [
+        {
+          id: 'init-1',
+          t: `🏁 ${currentCircuit.name} ready (${trackLength} spaces · ${currentCircuit.country}). All players lined up behind the start line in random allocation. Roll dice to start!`,
+          n: 1,
+        },
+      ],
+      win: null,
+      sel: createEmptySelection(),
+      discardedDice: initialPlayers.map(() => []),
+    };
+  });
 
   // Dice roll animation state
   const [isRolling, setIsRolling] = useState(false);
@@ -150,290 +205,302 @@ export default function App() {
     };
   }, []);
 
-  // Re-sync track when mode changes
-  useEffect(() => {
-    const loaded = loadStoredTrack(options.mode);
-    setSegments(loaded);
-  }, [options.mode]);
-
   // Restart / Initialize game
-  const resetGame = useCallback((overrides?: Partial<GameOptions>) => {
-    const resetOptions = { ...options, ...overrides };
-    const randomStartLead =
-      resetOptions.bot === 'medium' ? (Math.random() < 0.5 ? 1 : 0) : 0;
+  const resetGame = useCallback(
+    (overrides?: Partial<GameOptions>, circuitOverride?: TrackDefinition) => {
+      const activeCircuit = circuitOverride || currentCircuit;
+      const tLen =
+        activeCircuit.sections?.length ||
+        activeCircuit.cellTypes?.length ||
+        activeCircuit.segments.reduce((acc, s) => acc + s.length, 0);
 
-    const initialLogs: LogEntry[] = [
-      {
-        id: 'start-0',
-        t: `Race Initialized (${resetOptions.mode.toUpperCase()} · ${resetOptions.laps} Lap${
-          resetOptions.laps > 1 ? 's' : ''
-        })`,
-        n: 1,
-      },
-    ];
+      const resetOptions = { ...options, ...overrides };
+      // In Championship, always 4 players
+      const numPlayers =
+        resetOptions.botCount === 3 && (resetOptions.bot === 'off' || resetOptions.bot === 'medium')
+          ? 4
+          : resetOptions.bot === 'medium'
+          ? 1 + resetOptions.botCount
+          : 2;
 
-    if (resetOptions.bot === 'medium') {
-      initialLogs.push({
-        id: 'start-1',
-        t: `Pole Position: Player ${randomStartLead + 1}${
-          randomStartLead === 1 ? ' (Bot)' : ''
-        } leads first.`,
+      const initialPlayers = createStartingGrid(numPlayers, activeCircuit.sections, tLen);
+      const turnOrder = getTurnOrder(initialPlayers, activeCircuit.sections, tLen);
+      const initialLead = turnOrder[0];
+
+      const initialLogs: LogEntry[] = [
+        {
+          id: `start-0-${Date.now()}`,
+          t: `Race Initialized (5d6 Dice · ${resetOptions.laps} Lap${
+            resetOptions.laps > 1 ? 's' : ''
+          }) · ${numPlayers} Drivers on the Grid`,
+          n: 1,
+        },
+        {
+          id: `start-1-${Date.now()}`,
+          t: `🏁 Pole Position: Player ${initialLead + 1}${
+            initialLead > 0 && resetOptions.bot === 'medium' ? ' (AI Bot)' : ''
+          } starts first from inside lane!`,
+        },
+      ];
+
+      setGameState({
+        round: 1,
+        step: 0,
+        turnIdx: 0,
+        turnOrder,
+        lead: initialLead,
+        tr: initialLead,
+        spd: initialPlayers.map(() => 0),
+        dv: initialPlayers.map(() => 0),
+        phase: 'roll',
+        P: initialPlayers,
+        picks: initialPlayers.map(() => null),
+        log: initialLogs,
+        win: null,
+        sel: createEmptySelection(),
+        discardedDice: initialPlayers.map(() => []),
       });
-    }
+    },
+    [options, currentCircuit]
+  );
 
-    setGameState({
-      round: 1,
-      step: 0,
-      lead: randomStartLead,
-      tr: 1 - randomStartLead,
-      spd: [0, 0],
-      dv: [0, 0],
-      phase: 'roll',
-      P: [createInitialPlayer(0), createInitialPlayer(1)],
-      extraBots: Array.from(
-        { length: resetOptions.bot === 'medium' ? resetOptions.botCount - 1 : 0 },
-        (_, idx) => createInitialPlayer(idx % 2)
-      ),
-      picks: [null, null],
-      log: initialLogs,
-      win: null,
-      sel: createEmptySelection(),
-      discardedCards: [[], []],
-      discardedDice: [[], []],
-    });
-  }, [options]);
-
-  // Roll / Draw for new round with animation & round 1 no-discard rule
+  // Roll 5d6 dice for new round
   const handleRoll = useCallback(() => {
     if (isRolling) return;
 
-    if (options.mode === 'dice') {
-      sound.playDiceTumble();
-      setIsRolling(true);
-    } else {
-      sound.playRoll();
-    }
-
-    const rollDuration = options.mode === 'dice' ? 700 : 0;
+    sound.playDiceTumble();
+    setIsRolling(true);
 
     rollTimerRef.current = setTimeout(() => {
       sound.playRoll();
       setIsRolling(false);
       setGameState((prev) => {
-        const diceCount = options.mode === 'cards' ? 3 : 5;
-        let didReshuffle = false;
-        const rollPlayer = (p: typeof prev.P[number]) => {
-          const copy = { ...p };
-          if (options.mode === 'cards') {
-            if (copy.deck.length < diceCount) {
-              copy.deck = shuffle(CARDS);
-              copy.played = [];
-              didReshuffle = true;
-            }
-            copy.dice = copy.deck.splice(0, diceCount);
-          } else {
-            copy.dice = Array.from(
-              { length: diceCount },
-              () => 1 + Math.floor(Math.random() * 6)
-            );
-          }
-          copy.used = [];
-          return copy;
-        };
-        const nextP = prev.P.map(rollPlayer) as [typeof prev.P[0], typeof prev.P[1]];
-        const nextExtraBots = prev.extraBots.map(rollPlayer);
-
-        const newLogs = [...prev.log];
-        newLogs.push({
-          id: `r-${prev.round}-${Date.now()}`,
-          n: 1,
-          t: `— Round ${prev.round}: ${
-            options.mode === 'cards' ? 'Cards drawn' : 'Dice rolled'
-          } in secret —`,
+        const rollPlayer = (p: typeof prev.P[number]) => ({
+          ...p,
+          dice: Array.from({ length: 5 }, () => 1 + Math.floor(Math.random() * 6)),
+          used: [],
         });
 
-        // Discard / Skip rule:
-        // CRITICAL: Do NOT discard for either player in the very first turn of the race (round 1)!
-        const nextDiscardedDice: [number[], number[]] = [[], []];
+        const nextP = prev.P.map(rollPlayer);
+        const turnOrder = getTurnOrder(nextP, currentCircuit.sections, trackLength);
+        const leader = turnOrder[0];
+
+        const rollDetails = nextP
+          .map((p, i) => `P${i + 1}: [${p.dice.join(', ')}]`)
+          .join(' · ');
+
+        const logMsg: LogEntry = {
+          id: `roll-${Date.now()}`,
+          t: `Round ${prev.round} (Dice rolled) → ${rollDetails}`,
+          n: prev.round,
+        };
+
+        // Discard / Skip rule (active from round 2 onwards)
+        const nextDiscardedDice: number[][] = nextP.map(() => []);
         const shouldDiscard = options.skip && prev.round > 1;
 
         if (shouldDiscard) {
-          const leader = getLeaderIndex(nextP, prev.lead);
-          [...nextP, ...nextExtraBots].forEach((p, i) => {
-            let k = 0;
-            p.dice.forEach((d, j) => {
-              if (i === leader ? d > p.dice[k] : d < p.dice[k]) {
-                k = j;
-              }
-            });
-            p.used.push(k);
-            if (i < 2) nextDiscardedDice[i] = [k];
-          });
+          // Leader discards highest die; trailing drivers discard lowest die
+          for (let i = 0; i < nextP.length; i++) {
+            const dice = nextP[i].dice;
+            const targetVal =
+              i === leader ? Math.max(...dice) : Math.min(...dice);
+            const k = dice.indexOf(targetVal);
+            nextDiscardedDice[i] = [k];
+          }
 
           const leaderVal = nextP[leader].dice[nextDiscardedDice[leader][0]];
-          const trailerVal = nextP[1 - leader].dice[nextDiscardedDice[1 - leader][0]];
-          newLogs.push({
-            id: `skip-${Date.now()}`,
-            t: `Discard rule: P${leader + 1} (leader) discards highest (${leaderVal}); P${
-              2 - leader
-            } (trailer) discards lowest (${trailerVal})`,
-          });
+          const discardLog: LogEntry = {
+            id: `discard-${Date.now()}`,
+            t: `Discard rule: P${leader + 1} (leader) discards highest (${leaderVal}); trailers discard lowest die.`,
+          };
+          sound.playDiscard();
 
-          setTimeout(() => {
-            sound.playDiscard();
-          }, 150);
-        } else if (prev.round === 1) {
-          newLogs.push({
+          const activePlayerIdx = turnOrder[0];
+          const activeP = nextP[activePlayerIdx];
+          const initialSel = createEmptySelection();
+
+          // Auto-select first available die for human player 0 if human's turn
+          if (activePlayerIdx === 0 && options.bot === 'medium') {
+            const availDie = activeP.dice.findIndex((_, idx) => !nextDiscardedDice[0]?.includes(idx));
+            if (availDie >= 0) {
+              initialSel.die = availDie;
+              const reachVal = calculateEffectiveValue(
+                0,
+                initialSel,
+                activeP.dice[availDie],
+                { ...prev, P: nextP },
+                options
+              );
+              const reachMap = computeReach(0, reachVal, { ...prev, P: nextP }, trackArray, options, outsideLanes);
+              const reachKeys = Object.keys(reachMap).filter((k) => k !== `${activeP.pos}:${activeP.lane}`);
+              if (reachKeys.length > 0) {
+                const bestKey = reachKeys[reachKeys.length - 1];
+                const [tgPos, tgLane] = bestKey.split(':').map(Number);
+                initialSel.tgt = { pos: tgPos, lane: tgLane };
+              }
+            }
+          }
+
+          return {
+            ...prev,
+            phase: 'turn',
+            turnIdx: 0,
+            turnOrder,
+            lead: leader,
+            tr: activePlayerIdx,
+            P: nextP,
+            picks: nextP.map(() => null),
+            log: [...prev.log, logMsg, discardLog],
+            sel: initialSel,
+            discardedDice: nextDiscardedDice,
+          };
+        } else {
+          // Round 1: No dice discarded, all 5 active
+          const r1Log: LogEntry = {
             id: `r1-nodiscard-${Date.now()}`,
-            t: `Opening round: No dice discarded on the first turn of the race! All 5 dice active.`,
-          });
+            t: `Opening round: All 5 dice are active on the opening turn!`,
+          };
+
+          const activePlayerIdx = turnOrder[0];
+          const activeP = nextP[activePlayerIdx];
+          const initialSel = createEmptySelection();
+
+          if (activePlayerIdx === 0 && options.bot === 'medium') {
+            const availDie = 0;
+            initialSel.die = availDie;
+            const reachVal = calculateEffectiveValue(
+              0,
+              initialSel,
+              activeP.dice[availDie],
+              { ...prev, P: nextP },
+              options
+            );
+            const reachMap = computeReach(0, reachVal, { ...prev, P: nextP }, trackArray, options, outsideLanes);
+            const reachKeys = Object.keys(reachMap).filter((k) => k !== `${activeP.pos}:${activeP.lane}`);
+            if (reachKeys.length > 0) {
+              const bestKey = reachKeys[reachKeys.length - 1];
+              const [tgPos, tgLane] = bestKey.split(':').map(Number);
+              initialSel.tgt = { pos: tgPos, lane: tgLane };
+            }
+          }
+
+          return {
+            ...prev,
+            phase: 'turn',
+            turnIdx: 0,
+            turnOrder,
+            lead: leader,
+            tr: activePlayerIdx,
+            P: nextP,
+            picks: nextP.map(() => null),
+            log: [...prev.log, logMsg, r1Log],
+            sel: initialSel,
+            discardedDice: nextDiscardedDice,
+          };
+        }
+      });
+    }, 700);
+  }, [isRolling, options, currentCircuit.sections, trackLength, trackArray, outsideLanes]);
+
+  // Handle die selection
+  const handleSelectDie = useCallback(
+    (dieIndex: number) => {
+      sound.playClick();
+      setGameState((prev) => {
+        const activeIdx = prev.tr;
+        const p = prev.P[activeIdx];
+        if (!p || p.used.includes(dieIndex)) return prev;
+
+        const nextSel: TargetSelection = {
+          ...prev.sel,
+          die: dieIndex,
+          tgt: null, // Clear target to force fresh reach selection
+        };
+
+        const die = p.dice[dieIndex];
+        const val = calculateEffectiveValue(activeIdx, nextSel, die, prev, options);
+        const reach = computeReach(activeIdx, val, prev, trackArray, options, outsideLanes);
+
+        // Auto-select furthest available space
+        const reachKeys = Object.keys(reach).filter((k) => k !== `${p.pos}:${p.lane}`);
+        if (reachKeys.length > 0) {
+          const bestKey = reachKeys[reachKeys.length - 1];
+          const [tgPos, tgLane] = bestKey.split(':').map(Number);
+          nextSel.tgt = { pos: tgPos, lane: tgLane };
         }
 
         return {
           ...prev,
-          step: 0,
-          phase: 'pick0',
-          sel: createEmptySelection(),
-          P: nextP,
-          log: newLogs,
-          discardedCards: didReshuffle ? [[], []] : (prev.discardedCards ?? [[], []]),
-          discardedDice: nextDiscardedDice,
-          extraBots: nextExtraBots,
+          sel: nextSel,
         };
       });
-    }, rollDuration);
-  }, [options, isRolling]);
-
-  // Compute current reach options for highlight
-  const currentReach = useMemo<ReachMap | null>(() => {
-    const ph = gameState.phase;
-    if (options.bot === 'medium' && ph === 'react' && gameState.tr === 1) {
-      return null;
-    }
-    if (!(ph === 'pick0' || ph === 'pick1' || ph === 'react')) {
-      return null;
-    }
-    const activeIdx = getActivePlayerIndex(gameState);
-    const leader = getLeaderIndex(gameState.P, gameState.lead);
-    if (ph !== 'react' && activeIdx !== leader) {
-      return null;
-    }
-    if (gameState.sel.die === null) {
-      return null;
-    }
-    const dieVal = gameState.P[activeIdx].dice[gameState.sel.die];
-    const val = calculateEffectiveValue(
-      activeIdx,
-      gameState.sel,
-      dieVal,
-      gameState,
-      options
-    );
-    return computeReach(activeIdx, val, gameState, trackArray, options, outsideLanes);
-  }, [gameState, options, trackArray, outsideLanes]);
-
-  // Select Die or Card
-  const handleSelectDie = useCallback(
-    (dieIdx: number) => {
-      sound.playSelect();
-      setGameState((prev) => {
-        const activeIdx = getActivePlayerIndex(prev);
-        const p = prev.P[activeIdx];
-        const nextSel: TargetSelection = { ...prev.sel, die: dieIdx };
-
-        const val = calculateEffectiveValue(
-          activeIdx,
-          nextSel,
-          p.dice[dieIdx],
-          prev,
-          options
-        );
-        const reach = computeReach(activeIdx, val, prev, trackArray, options, outsideLanes);
-
-        // Validate existing target or auto-select valid destination
-        const currentKey = nextSel.tgt ? `${nextSel.tgt.pos}:${nextSel.tgt.lane}` : '';
-        if (!currentKey || !(currentKey in reach)) {
-          const leader = getLeaderIndex(prev.P, prev.lead);
-          const shouldAutoSelect = prev.phase === 'react' || activeIdx === leader;
-          if (shouldAutoSelect) {
-            const reachKeys = Object.keys(reach).filter((k) => k !== `${p.pos}:${p.lane}`);
-            if (reachKeys.length > 0) {
-              const innerKey = reachKeys.find((k) => k.endsWith(':0')) || reachKeys[0];
-              const [tgPos, tgLane] = innerKey.split(':').map(Number);
-              nextSel.tgt = { pos: tgPos, lane: tgLane };
-            } else {
-              nextSel.tgt = null;
-            }
-          } else {
-            nextSel.tgt = null;
-          }
-        }
-
-        return { ...prev, sel: nextSel };
-      });
     },
     [options, trackArray, outsideLanes]
   );
 
-  // Adjust slipstream or momentum tokens
+  // Handle token adjustments (Slipstream and Momentum)
   const handleAdjustTokens = useCallback(
     (type: 'slip' | 'mom', delta: number) => {
-      sound.playSelect();
+      sound.playClick();
       setGameState((prev) => {
-        const activeIdx = getActivePlayerIndex(prev);
+        const activeIdx = prev.tr;
         const p = prev.P[activeIdx];
-        const nextVal = Math.max(0, Math.min(p[type], prev.sel[type] + delta));
-        const nextSel: TargetSelection = { ...prev.sel, [type]: nextVal };
+        if (!p) return prev;
 
+        const nextSel: TargetSelection = { ...prev.sel };
+        if (type === 'slip') {
+          const nextVal = Math.max(0, Math.min(p.slip, nextSel.slip + delta));
+          nextSel.slip = nextVal;
+        } else {
+          const nextVal = Math.max(0, Math.min(p.mom, nextSel.mom + delta));
+          nextSel.mom = nextVal;
+        }
+
+        // Recompute reach for new token expenditure
         if (nextSel.die !== null) {
-          const val = calculateEffectiveValue(
-            activeIdx,
-            nextSel,
-            p.dice[nextSel.die],
-            prev,
-            options
-          );
+          const die = p.dice[nextSel.die];
+          const val = calculateEffectiveValue(activeIdx, nextSel, die, prev, options);
           const reach = computeReach(activeIdx, val, prev, trackArray, options, outsideLanes);
-          const currentKey = nextSel.tgt ? `${nextSel.tgt.pos}:${nextSel.tgt.lane}` : '';
-          if (!currentKey || !(currentKey in reach)) {
-            const reachKeys = Object.keys(reach).filter((k) => k !== `${p.pos}:${p.lane}`);
-            if (reachKeys.length > 0) {
-              const innerKey = reachKeys.find((k) => k.endsWith(':0')) || reachKeys[0];
-              const [tgPos, tgLane] = innerKey.split(':').map(Number);
-              nextSel.tgt = { pos: tgPos, lane: tgLane };
-            } else {
-              nextSel.tgt = null;
-            }
+          const reachKeys = Object.keys(reach).filter((k) => k !== `${p.pos}:${p.lane}`);
+          if (reachKeys.length > 0) {
+            const bestKey = reachKeys[reachKeys.length - 1];
+            const [tgPos, tgLane] = bestKey.split(':').map(Number);
+            nextSel.tgt = { pos: tgPos, lane: tgLane };
           }
         }
 
-        return { ...prev, sel: nextSel };
+        return {
+          ...prev,
+          sel: nextSel,
+        };
       });
     },
     [options, trackArray, outsideLanes]
   );
 
-  // Tap track space
+  // Target selection on track
   const handleSelectTarget = useCallback((pos: number, lane: number) => {
-    sound.playSelect();
+    sound.playClick();
     setGameState((prev) => ({
       ...prev,
-      sel: { ...prev.sel, tgt: { pos, lane } },
+      sel: {
+        ...prev.sel,
+        tgt: { pos, lane },
+      },
     }));
   }, []);
 
-  // Movement execution
-  const executeMove = useCallback(
+  // Execute move for any player (human or bot)
+  const executePlayerMove = useCallback(
     (
       playerIdx: number,
       pick: TargetSelection,
       currentState: GameState
-    ): { nextState: GameState; winIndex: number | null } => {
+    ): GameState => {
       sound.playMove();
       const p = { ...currentState.P[playerIdx] };
       const die = p.dice[pick.die!];
-      const base = baseValue(die, options.mode);
-      const effectiveSpd = calculateSpeed(playerIdx, die, currentState, options);
       const val = calculateEffectiveValue(playerIdx, pick, die, currentState, options);
       const reach = computeReach(playerIdx, val, currentState, trackArray, options, outsideLanes);
 
@@ -448,48 +515,45 @@ export default function App() {
 
       p.slip -= pick.slip;
       p.mom -= pick.mom;
-      if (options.head) p.head = 0;
       p.used = [...p.used, pick.die!];
-      p.tot += base;
+      p.tot += die;
       p.cnt++;
-      if (options.mode === 'cards') {
-        p.played = [...p.played, die];
-      }
 
       const f0 = p.pos;
-      const passTarget = getPassTarget(playerIdx, tg.pos, currentState, trackArray, options);
       p.pos = tg.pos;
       p.lane = tg.lane;
 
-      const jumpTarget = getJumpTarget(playerIdx, die, p.pos, currentState, trackArray, options);
+      // Authoritative slipstream pass calculation (must have open lane to pass around car)
+      const passTarget = getPassTarget(
+        playerIdx,
+        p.pos,
+        p.lane,
+        currentState,
+        trackArray,
+        options,
+        currentCircuit.sections
+      );
       let specialMoveMsg = '';
 
-      if (jumpTarget) {
-        p.pos = jumpTarget;
-        p.lane = trackArray[jumpTarget % trackLength] === 'S' ? 0 : tg.lane;
-        specialMoveMsg = ` ★ jumps ahead to space ${jumpTarget}`;
-        sound.playBoost();
-      } else if (passTarget) {
-        p.pos = passTarget;
-        p.lane = trackArray[passTarget % trackLength] === 'S' ? 0 : tg.lane;
-        specialMoveMsg = ` ➜ slipstream pass to space ${passTarget}`;
+      if (passTarget) {
+        p.pos = passTarget.pos;
+        p.lane = passTarget.lane;
+        specialMoveMsg = ` ➜ slipstream pass to space ${passTarget.pos}`;
         sound.playBoost();
       }
 
-      const nextSpd = [...currentState.spd] as [number, number];
-      const nextDv = [...currentState.dv] as [number, number];
+      const nextSpd = [...currentState.spd];
+      const nextDv = [...currentState.dv];
       nextSpd[playerIdx] = val;
       nextDv[playerIdx] = die;
 
       const logMsg: LogEntry = {
         id: `move-${Date.now()}-${Math.random()}`,
-        t: `P${playerIdx + 1}: ${
-          options.mode === 'cards' ? 'card' : 'die'
-        } ${getCardOrDieLabel(die, options.mode)}${
-          effectiveSpd !== base ? ` -${base - effectiveSpd} headwind` : ''
-        }${pick.slip ? ` +${pick.slip * SLIP_VAL} slipstream` : ''}${
-          pick.mom ? ` +${pick.mom * MOM_VAL} momentum` : ''
-        } = ${val} → #${p.pos} (${p.lane ? 'out' : 'in'})${specialMoveMsg}`,
+        t: `P${playerIdx + 1}${playerIdx > 0 && options.bot === 'medium' ? ' (AI)' : ''}: die ${die}${
+          pick.slip ? ` +${pick.slip * SLIP_VAL} slipstream` : ''
+        }${pick.mom ? ` +${pick.mom * MOM_VAL} momentum` : ''} = ${val} → #${p.pos} (${
+          p.lane ? 'out' : 'in'
+        })${specialMoveMsg}`,
       };
 
       const newLogs = [...currentState.log, logMsg];
@@ -499,429 +563,294 @@ export default function App() {
         Math.floor(p.pos / trackLength) > Math.floor(f0 / trackLength) &&
         p.pos < endPos
       ) {
+        const lapNum = Math.floor(p.pos / trackLength) + 1;
         newLogs.push({
-          id: `lap-${Date.now()}`,
-          t: `🏁 P${playerIdx + 1} starts Lap ${
-            Math.floor(p.pos / trackLength) + 1
-          }/${options.laps}`,
+          id: `lap-${Date.now()}-${playerIdx}`,
+          t: `🚩 P${playerIdx + 1} completed lap ${lapNum - 1} · Starting Lap ${lapNum}/${options.laps}`,
         });
+        sound.playLap();
       }
 
-      let winIndex = currentState.win;
-      if (p.pos >= endPos) {
+      const nextP = currentState.P.map((curP, idx) => (idx === playerIdx ? p : curP));
+
+      // Check win condition
+      let winIndex: number | null = currentState.win;
+      if (winIndex === null && p.pos >= endPos) {
         winIndex = playerIdx;
         sound.playWin();
         newLogs.push({
           id: `win-${Date.now()}`,
-          t: `🏆 Player ${playerIdx + 1} crosses the finish line and wins!`,
+          t: `🏆 CHECKERED FLAG: Player ${winIndex + 1}${
+            winIndex > 0 && options.bot === 'medium' ? ' (AI)' : ''
+          } WINS THE RACE!`,
         });
+
+        // If in Championship mode, calculate complete 1st, 2nd, 3rd, 4th order and award points
+        if (championship?.active) {
+          const otherIndices = nextP.map((_, i) => i).filter((i) => i !== winIndex);
+          otherIndices.sort((a, b) =>
+            comparePlayerPositions(nextP[a], nextP[b], currentCircuit.sections, trackLength)
+          );
+          const fullFinishingOrder = [winIndex, ...otherIndices];
+          setLastRaceOrder(fullFinishingOrder);
+          setCompletedRaceIndex(championship.currentRaceIndex);
+
+          // Points: 1st=6, 2nd=4, 3rd=2, 4th=1
+          const ptsMap = [6, 4, 2, 1];
+          setChampionship((prevChamp) => {
+            if (!prevChamp) return null;
+            const updatedStandings = prevChamp.standings.map((st) => {
+              const rank = fullFinishingOrder.indexOf(st.playerIdx);
+              const pts = ptsMap[rank] ?? 1;
+              return {
+                ...st,
+                points: st.points + pts,
+                wins: st.wins + (rank === 0 ? 1 : 0),
+                secondPlaces: st.secondPlaces + (rank === 1 ? 1 : 0),
+                thirdPlaces: st.thirdPlaces + (rank === 2 ? 1 : 0),
+                fourthPlaces: st.fourthPlaces + (rank === 3 ? 1 : 0),
+                history: [...st.history, pts],
+              };
+            });
+            return {
+              ...prevChamp,
+              standings: updatedStandings,
+            };
+          });
+
+          // Open championship standings modal
+          setTimeout(() => {
+            setChampionshipModalOpen(true);
+          }, 600);
+        }
       }
 
-      const nextP = [...currentState.P] as [typeof p, typeof p];
-      nextP[playerIdx] = p;
-
-      return {
-        nextState: {
-          ...currentState,
-          P: nextP,
-          spd: nextSpd,
-          dv: nextDv,
-          log: newLogs,
-          win: winIndex,
-          phase: winIndex !== null ? 'over' : currentState.phase,
-        },
-        winIndex,
+      const stateAfterMove: GameState = {
+        ...currentState,
+        P: nextP,
+        spd: nextSpd,
+        dv: nextDv,
+        log: newLogs,
+        win: winIndex,
+        phase: winIndex !== null ? 'over' : currentState.phase,
       };
-    },
-    [options, trackArray, trackLength, endPos, outsideLanes]
-  );
 
-  const advanceExtraBots = useCallback(
-    (state: GameState): GameState => {
-      let nextState = state;
-      const playerOrder = nextState.extraBots
-        .map((player, idx) => ({ player, idx }))
-        .sort((a, b) => b.player.pos - a.player.pos)
-        .map(({ idx }) => idx);
+      if (winIndex !== null) {
+        return stateAfterMove;
+      }
 
-      for (const botIdx of playerOrder) {
-        if (nextState.win !== null) break;
-        const playerIdx = botIdx + 2;
-        const player = getPlayerState(nextState, playerIdx);
-        type BotMoveChoice = {
-          die: number;
-          slip: number;
-          mom: number;
-          tgt: { pos: number; lane: number };
-          pos: number;
-          lane: number;
-          score: number;
-        };
-        let bestMove: BotMoveChoice | null = null;
+      // Independent movement sequence: advance to next player in turnOrder
+      const nextTurnIdx = currentState.turnIdx + 1;
 
-        for (let dieIdx = 0; dieIdx < player.dice.length; dieIdx++) {
-          const die = player.dice[dieIdx];
-          if (player.used.includes(dieIdx)) continue;
-          for (let slip = 0; slip <= Math.min(player.slip, 2); slip++) {
-            for (let mom = 0; mom <= Math.min(player.mom, 2); mom++) {
-              const value = calculateEffectiveValue(
-                playerIdx,
-                { die: dieIdx, slip, mom, tgt: null },
-                die,
-                nextState,
-                options
-              );
-              const reach = computeReach(
-                playerIdx,
-                value,
-                nextState,
-                trackArray,
-                options,
-                outsideLanes
-              );
-              for (const key of Object.keys(reach)) {
-                const [pos, lane] = key.split(':').map(Number);
-                const jumpTarget = getJumpTarget(
-                  playerIdx,
-                  die,
-                  pos,
-                  nextState,
-                  trackArray,
-                  options
-                );
-                const passTarget = jumpTarget
-                  ? 0
-                  : getPassTarget(playerIdx, pos, nextState, trackArray, options);
-                const finalPos = jumpTarget || passTarget || pos;
-                const finalLane =
-                  trackArray[finalPos % trackLength] === 'S' ? 0 : lane;
-                const score = finalPos - (slip + mom) * 0.01;
-                if (!bestMove || score > bestMove.score) {
-                  bestMove = {
-                    die: dieIdx,
-                    slip,
-                    mom,
-                    tgt: { pos, lane },
-                    pos: finalPos,
-                    lane: finalLane,
-                    score,
-                  };
-                }
-              }
+      if (nextTurnIdx < currentState.turnOrder.length) {
+        const nextActiveIdx = currentState.turnOrder[nextTurnIdx];
+        let nextSel = createEmptySelection();
+
+        // Convenience auto-select for human player if human is next
+        const isNextHuman = options.bot === 'off' || nextActiveIdx === 0;
+        if (isNextHuman) {
+          const availDie = nextP[nextActiveIdx].dice.findIndex(
+            (_, dIdx) => !nextP[nextActiveIdx].used.includes(dIdx)
+          );
+          if (availDie >= 0) {
+            nextSel.die = availDie;
+            const reachVal = calculateEffectiveValue(
+              nextActiveIdx,
+              nextSel,
+              nextP[nextActiveIdx].dice[availDie],
+              stateAfterMove,
+              options
+            );
+            const reachMap = computeReach(
+              nextActiveIdx,
+              reachVal,
+              stateAfterMove,
+              trackArray,
+              options,
+              outsideLanes
+            );
+            const reachKeys = Object.keys(reachMap).filter(
+              (k) => k !== `${nextP[nextActiveIdx].pos}:${nextP[nextActiveIdx].lane}`
+            );
+            if (reachKeys.length > 0) {
+              const bestKey = reachKeys[reachKeys.length - 1];
+              const [tgPos, tgLane] = bestKey.split(':').map(Number);
+              nextSel.tgt = { pos: tgPos, lane: tgLane };
             }
           }
         }
 
-        if (!bestMove) continue;
-        const movedPlayer = {
-          ...player,
-          pos: bestMove.pos,
-          lane: bestMove.lane,
-          slip: player.slip - bestMove.slip,
-          mom: player.mom - bestMove.mom,
-          head: options.head ? 0 : player.head,
-          used: [...player.used, bestMove.die],
-          tot: player.tot + baseValue(player.dice[bestMove.die], options.mode),
-          cnt: player.cnt + 1,
-          played:
-            options.mode === 'cards'
-              ? [...player.played, player.dice[bestMove.die]]
-              : player.played,
+        return {
+          ...stateAfterMove,
+          turnIdx: nextTurnIdx,
+          tr: nextActiveIdx,
+          phase: 'turn',
+          sel: nextSel,
         };
-        const extraBots = [...nextState.extraBots];
-        extraBots[botIdx] = movedPlayer;
-        const won = movedPlayer.pos >= endPos;
-        nextState = {
-          ...nextState,
-          extraBots,
-          win: won ? playerIdx : nextState.win,
-          phase: won ? 'over' : nextState.phase,
-          log: [
-            ...nextState.log,
-            {
-              id: `move-${Date.now()}-${playerIdx}`,
-              t: `P${playerIdx + 1} (AI): ${options.mode === 'cards' ? 'card' : 'die'} ${getCardOrDieLabel(
-                player.dice[bestMove.die],
-                options.mode
-              )} → #${movedPlayer.pos}`,
-            },
-            ...(won
-              ? [
-                  {
-                    id: `win-${Date.now()}-${playerIdx}`,
-                    t: `🏆 Player ${playerIdx + 1} crosses the finish line and wins!`,
-                  },
-                ]
-              : []),
-          ],
-        };
-        if (won) sound.playWin();
-      }
-
-      return nextState;
-    },
-    [options, trackArray, outsideLanes, trackLength, endPos]
-  );
-
-  const finishStep = useCallback(
-    (state: GameState) => computeStepFinishedState(advanceExtraBots(state), options),
-    [advanceExtraBots, options]
-  );
-
-  // Reveal Phase: leader moves, then trailer enters react phase
-  const handleReveal = useCallback(
-    (picks: [TargetSelection | null, TargetSelection | null], state: GameState) => {
-      const hasInvalidPick = picks.some((pick, playerIdx) =>
-        !pick ||
-        pick.die === null ||
-        !Number.isInteger(pick.die) ||
-        pick.die < 0 ||
-        pick.die >= state.P[playerIdx].dice.length
-      );
-
-      if (hasInvalidPick) {
-        setGameState({
-          ...state,
-          phase: 'pick0',
-          picks: [null, null],
-          sel: createEmptySelection(),
-          log: [
-            ...state.log,
-            { id: `invalid-pick-${Date.now()}`, t: 'Invalid choice; please select again.' },
-          ],
-        });
-        return;
-      }
-
-      const validPicks = picks as [TargetSelection, TargetSelection];
-      const leader = getLeaderIndex(state.P, state.lead);
-      const trailer = 1 - leader;
-
-      const newLog: LogEntry = {
-        id: `reveal-${Date.now()}`,
-        n: 1,
-        t: `Step ${state.step + 1}/${getRoundSteps(options, state.round)}: Revealed — P${
-          leader + 1
-        } (Leader) ${getCardOrDieLabel(
-          state.P[leader].dice[validPicks[leader].die!],
-          options.mode
-        )}, P${trailer + 1} (Trailer) ${getCardOrDieLabel(
-          state.P[trailer].dice[validPicks[trailer].die!],
-          options.mode
-        )}`,
-      };
-
-      const stateWithLog = { ...state, log: [...state.log, newLog] };
-      const { nextState, winIndex } = executeMove(leader, validPicks[leader], stateWithLog);
-
-      if (winIndex !== null) {
-        setGameState(nextState);
-        return;
-      }
-
-      // Trailer reacts
-      const trailerReactState: GameState = {
-        ...nextState,
-        lead: leader,
-        tr: trailer,
-        sel: {
-          die: validPicks[trailer].die,
-          slip: 0,
-          mom: 0,
-          tgt: null,
-        },
-        phase: 'react',
-      };
-
-      // If Human is trailer, auto-select first reachable space for convenience
-      if (!(options.bot === 'medium' && trailer === 1)) {
-        const val = calculateEffectiveValue(
-          trailer,
-          trailerReactState.sel,
-          state.P[trailer].dice[validPicks[trailer].die!],
-          trailerReactState,
-          options
-        );
-        const reach = computeReach(trailer, val, trailerReactState, trackArray, options, outsideLanes);
-        const reachKeys = Object.keys(reach).filter(
-          (k) => k !== `${state.P[trailer].pos}:${state.P[trailer].lane}`
-        );
-        if (reachKeys.length > 0) {
-          const innerKey = reachKeys.find((k) => k.endsWith(':0')) || reachKeys[0];
-          const [tgPos, tgLane] = innerKey.split(':').map(Number);
-          trailerReactState.sel.tgt = { pos: tgPos, lane: tgLane };
-        }
-      }
-
-      setGameState(trailerReactState);
-
-      // If Bot is trailer, trigger its reaction after small delay
-      if (options.bot === 'medium' && trailer === 1) {
-        setTimeout(() => {
-          setGameState((curr) => {
-            if (curr.phase !== 'react' || curr.tr !== 1) return curr;
-            const botReaction = computeBotReact(curr, trackArray, options, outsideLanes);
-            const botPick: TargetSelection = {
-              die: curr.sel.die,
-              slip: botReaction.sl,
-              mom: botReaction.mo,
-              tgt: botReaction.tgt,
-            };
-            const result = executeMove(1, botPick, curr);
-            if (result.winIndex !== null) {
-              return result.nextState;
-            }
-            return finishStep(result.nextState);
-          });
-        }, 700);
-      }
-    },
-    [options, executeMove, trackArray, outsideLanes, finishStep]
-  );
-
-  // Lock In choice
-  const handleLockIn = useCallback(() => {
-    sound.playSelect();
-    const activeIdx = getActivePlayerIndex(gameState);
-    const leader = getLeaderIndex(gameState.P, gameState.lead);
-
-    if (gameState.sel.die === null || (activeIdx === leader && !gameState.sel.tgt)) {
-      return;
-    }
-
-    const nextPicks: [TargetSelection | null, TargetSelection | null] = [
-      ...gameState.picks,
-    ];
-    nextPicks[activeIdx] = gameState.sel;
-
-    if (gameState.phase === 'pick0') {
-      if (options.bot === 'medium') {
-        // Player 1 picked, Bot now picks
-        const botLeaderChoice =
-          leader === 1
-            ? computeBotLead(gameState, trackArray, options, outsideLanes)
-            : null;
-        const botTrailerChoice =
-          leader === 0
-            ? computeBotTrail(gameState, trackArray, options, outsideLanes)
-            : null;
-
-        const botPick: TargetSelection = {
-          die: botLeaderChoice ? botLeaderChoice.d : botTrailerChoice!.d,
-          slip: botLeaderChoice?.sl ?? 0,
-          mom: botLeaderChoice?.mo ?? 0,
-          tgt: botLeaderChoice?.tgt ?? null,
-        };
-
-        nextPicks[1] = botPick;
-        handleReveal(nextPicks, { ...gameState, picks: nextPicks });
       } else {
-        // Human 2P pass and play
-        setGameState((prev) => ({
-          ...prev,
-          picks: nextPicks,
-          phase: 'cover',
-        }));
+        // All players have moved for this step: end step token awards
+        return computeStepFinishedState(
+          stateAfterMove,
+          options,
+          currentCircuit.sections,
+          trackLength
+        );
       }
-    } else {
-      // Phase pick1: both locked in, reveal!
-      handleReveal(nextPicks, { ...gameState, picks: nextPicks });
+    },
+    [
+      options,
+      trackArray,
+      trackLength,
+      endPos,
+      outsideLanes,
+      currentCircuit.sections,
+      championship,
+    ]
+  );
+
+  // Automated AI bot turn execution in sequence
+  useEffect(() => {
+    if (gameState.phase !== 'turn' || gameState.win !== null) return;
+    const activeIdx = gameState.turnOrder[gameState.turnIdx];
+
+    if (options.bot === 'medium' && activeIdx > 0) {
+      const timer = setTimeout(() => {
+        setGameState((curr) => {
+          if (curr.phase !== 'turn' || curr.win !== null) return curr;
+          const currActive = curr.turnOrder[curr.turnIdx];
+          if (currActive !== activeIdx) return curr;
+
+          const botChoice = computeBotMove(
+            activeIdx,
+            curr,
+            trackArray,
+            options,
+            outsideLanes,
+            currentCircuit.sections
+          );
+
+          return executePlayerMove(activeIdx, botChoice, curr);
+        });
+      }, 650);
+
+      return () => clearTimeout(timer);
     }
-  }, [gameState, options, trackArray, outsideLanes, handleReveal]);
+  }, [
+    gameState.phase,
+    gameState.turnIdx,
+    gameState.turnOrder,
+    gameState.win,
+    options,
+    trackArray,
+    outsideLanes,
+    currentCircuit.sections,
+    executePlayerMove,
+  ]);
 
-  // Player 2 takes over in pass-and-play
-  const handleStartPlayer2 = useCallback(() => {
-    setGameState((prev) => ({
-      ...prev,
-      phase: 'pick1',
-      sel: createEmptySelection(),
-    }));
-  }, []);
+  // Human player confirm move handler
+  const handleConfirmMove = useCallback(() => {
+    const activeIdx = gameState.turnOrder[gameState.turnIdx];
+    if (gameState.sel.die === null || !gameState.sel.tgt) return;
+    setGameState((prev) => executePlayerMove(activeIdx, prev.sel, prev));
+  }, [gameState.turnOrder, gameState.turnIdx, gameState.sel, executePlayerMove]);
 
-  // Trailer reacts and moves
-  const handleReact = useCallback(() => {
-    if (!gameState.sel.tgt) return;
-    const { nextState, winIndex } = executeMove(gameState.tr, gameState.sel, gameState);
-    if (winIndex !== null) {
-      setGameState(nextState);
-      return;
-    }
-    setGameState(finishStep(nextState));
-  }, [gameState, executeMove, finishStep]);
-
-  // Proceed to next step or next round
+  // Next step or round advance handler
   const handleNextStep = useCallback(() => {
+    sound.playClick();
     const totalSteps = getRoundSteps(options, gameState.round);
-    if (gameState.win !== null) {
-      setGameState((prev) => ({ ...prev, phase: 'over' }));
-    } else if (gameState.step >= totalSteps) {
+
+    if (gameState.step >= totalSteps) {
+      // Advance to next round
       setGameState((prev) => ({
         ...prev,
         round: prev.round + 1,
+        step: 0,
+        turnIdx: 0,
         phase: 'roll',
-      }));
-    } else {
-      setGameState((prev) => ({
-        ...prev,
-        phase: 'pick0',
         sel: createEmptySelection(),
       }));
-    }
-  }, [gameState, options]);
+    } else {
+      // Recompute turn order for next step: leader goes first, inside lane priority
+      setGameState((prev) => {
+        const turnOrder = getTurnOrder(prev.P, currentCircuit.sections, trackLength);
+        const leader = turnOrder[0];
+        const activeIdx = turnOrder[0];
+        const initialSel = createEmptySelection();
 
-  // Switch circuit from selector
+        const isNextHuman = options.bot === 'off' || activeIdx === 0;
+        if (isNextHuman) {
+          const availDie = prev.P[activeIdx].dice.findIndex(
+            (_, dIdx) => !prev.P[activeIdx].used.includes(dIdx)
+          );
+          if (availDie >= 0) {
+            initialSel.die = availDie;
+            const reachVal = calculateEffectiveValue(
+              activeIdx,
+              initialSel,
+              prev.P[activeIdx].dice[availDie],
+              prev,
+              options
+            );
+            const reachMap = computeReach(
+              activeIdx,
+              reachVal,
+              prev,
+              trackArray,
+              options,
+              outsideLanes
+            );
+            const reachKeys = Object.keys(reachMap).filter(
+              (k) => k !== `${prev.P[activeIdx].pos}:${prev.P[activeIdx].lane}`
+            );
+            if (reachKeys.length > 0) {
+              const bestKey = reachKeys[reachKeys.length - 1];
+              const [tgPos, tgLane] = bestKey.split(':').map(Number);
+              initialSel.tgt = { pos: tgPos, lane: tgLane };
+            }
+          }
+        }
+
+        return {
+          ...prev,
+          turnIdx: 0,
+          turnOrder,
+          lead: leader,
+          tr: activeIdx,
+          phase: 'turn',
+          sel: initialSel,
+        };
+      });
+    }
+  }, [gameState, options, currentCircuit.sections, trackLength, trackArray, outsideLanes]);
+
+  // Switch circuit from Track Selector
   const handleSelectCircuit = useCallback(
     (newCircuit: TrackDefinition) => {
       setCurrentCircuit(newCircuit);
       setSegments(newCircuit.segments);
       saveCurrentCircuitId(newCircuit.id);
-      saveStoredTrack(options.mode, newCircuit.segments);
+      saveStoredTrack('dice', newCircuit.segments);
       if (newCircuit.lapsDefault) {
         setOptions((prev) => ({ ...prev, laps: newCircuit.lapsDefault }));
       }
-      const randomStartLead =
-        options.bot === 'medium' ? (Math.random() < 0.5 ? 1 : 0) : 0;
-      setGameState({
-        round: 1,
-        step: 0,
-        lead: randomStartLead,
-        tr: 1 - randomStartLead,
-        spd: [0, 0],
-        dv: [0, 0],
-        phase: 'roll',
-        P: [createInitialPlayer(0), createInitialPlayer(1)],
-        extraBots: Array.from(
-          { length: options.bot === 'medium' ? options.botCount - 1 : 0 },
-          (_, idx) => createInitialPlayer(idx % 2)
-        ),
-        picks: [null, null],
-        log: [
-          {
-            id: `circuit-${Date.now()}`,
-            t: `🏁 Circuit selected: ${newCircuit.name} (${newCircuit.segments.join('').length} spaces · ${newCircuit.country}). Ready to race!`,
-            n: 1,
-          },
-        ],
-        win: null,
-        sel: createEmptySelection(),
-        discardedCards: [[], []],
-      });
+      resetGame(
+        newCircuit.lapsDefault ? { laps: newCircuit.lapsDefault } : undefined,
+        newCircuit
+      );
+      setScreen('race');
     },
-    [options.bot, options.botCount, options.mode]
+    [resetGame]
   );
 
   // Update segments from Track Architect
-  const handleUpdateSegments = useCallback(
-    (newSegments: string[]) => {
-      setSegments(newSegments);
-      setCurrentCircuit((prev) => ({
-        ...prev,
-        segments: newSegments,
-      }));
-      saveStoredTrack(options.mode, newSegments);
-    },
-    [options.mode]
-  );
+  const handleUpdateSegments = useCallback((newSegments: string[]) => {
+    setSegments(newSegments);
+    setCurrentCircuit((prev) => ({
+      ...prev,
+      segments: newSegments,
+    }));
+    saveStoredTrack('dice', newSegments);
+  }, []);
 
   // Editor toggle on cell tap
   const handleToggleCellEditor = useCallback(
@@ -942,61 +871,216 @@ export default function App() {
         ...prev,
         segments: nextSegs,
       }));
-      saveStoredTrack(options.mode, nextSegs);
+      saveStoredTrack('dice', nextSegs);
       resetGame();
     },
-    [segments, options.mode, resetGame]
+    [segments, resetGame]
   );
+
+  // Current reach map for active player
+  const currentReach: ReachMap = useMemo(() => {
+    if (gameState.phase !== 'turn' || gameState.sel.die === null) return {};
+    const activeIdx = gameState.tr;
+    const p = gameState.P[activeIdx];
+    if (!p) return {};
+    const die = p.dice[gameState.sel.die];
+    const val = calculateEffectiveValue(activeIdx, gameState.sel, die, gameState, options);
+    return computeReach(activeIdx, val, gameState, trackArray, options, outsideLanes);
+  }, [gameState, options, trackArray, outsideLanes]);
+
+  // Home Page Mode Actions:
+  // 1. Daily Play
+  const handleStartDailyPlay = useCallback(
+    (track: TrackDefinition, botMode: BotDifficulty, botCount: 1 | 2 | 3) => {
+      setChampionship(null);
+      setCurrentCircuit(track);
+      setSegments(track.segments);
+      const newOptions: GameOptions = {
+        ...options,
+        bot: botMode,
+        botCount,
+        laps: track.lapsDefault || 2,
+      };
+      setOptions(newOptions);
+      resetGame(newOptions, track);
+      setScreen('race');
+    },
+    [options, resetGame]
+  );
+
+  // 2. Pick Track
+  const handleStartPickTrack = useCallback(() => {
+    refreshAvailableTracks();
+    setTrackSelectorOpen(true);
+  }, [refreshAvailableTracks]);
+
+  // 3. Championship Mode
+  const handleStartChampionship = useCallback(
+    (type: 'solo' | 'pass-and-play', raceCount: number) => {
+      const all = getAllAvailableTracks();
+      const seasonTracks: TrackDefinition[] = [];
+      for (let i = 0; i < raceCount; i++) {
+        seasonTracks.push(all[i % all.length]);
+      }
+
+      const newChamp: ChampionshipState = {
+        active: true,
+        type,
+        currentRaceIndex: 0,
+        totalRaces: raceCount,
+        tracks: seasonTracks,
+        standings: [
+          { playerIdx: 0, name: 'Driver 1 (Blue)', points: 0, wins: 0, secondPlaces: 0, thirdPlaces: 0, fourthPlaces: 0, history: [] },
+          { playerIdx: 1, name: type === 'solo' ? 'Bot Red' : 'Driver 2 (Red)', points: 0, wins: 0, secondPlaces: 0, thirdPlaces: 0, fourthPlaces: 0, history: [] },
+          { playerIdx: 2, name: type === 'solo' ? 'Bot Green' : 'Driver 3 (Green)', points: 0, wins: 0, secondPlaces: 0, thirdPlaces: 0, fourthPlaces: 0, history: [] },
+          { playerIdx: 3, name: type === 'solo' ? 'Bot Violet' : 'Driver 4 (Violet)', points: 0, wins: 0, secondPlaces: 0, thirdPlaces: 0, fourthPlaces: 0, history: [] },
+        ],
+      };
+
+      setChampionship(newChamp);
+      setLastRaceOrder(undefined);
+      setCompletedRaceIndex(undefined);
+
+      const firstTrack = seasonTracks[0];
+      setCurrentCircuit(firstTrack);
+      setSegments(firstTrack.segments);
+
+      const champOptions: GameOptions = {
+        ...options,
+        bot: type === 'solo' ? 'medium' : 'off',
+        botCount: 3, // Always 4 players in Championship
+        laps: firstTrack.lapsDefault || 2,
+      };
+      setOptions(champOptions);
+      resetGame(champOptions, firstTrack);
+      setScreen('race');
+    },
+    [options, resetGame]
+  );
+
+  // Next Race in Championship
+  const handleNextRaceInChampionship = useCallback(() => {
+    if (!championship) return;
+    const nextIdx = championship.currentRaceIndex + 1;
+    if (nextIdx >= championship.totalRaces) return;
+
+    const nextTrack = championship.tracks[nextIdx];
+    setChampionship((prev) => (prev ? { ...prev, currentRaceIndex: nextIdx } : null));
+    setCurrentCircuit(nextTrack);
+    setSegments(nextTrack.segments);
+    setChampionshipModalOpen(false);
+
+    const champOptions: GameOptions = {
+      ...options,
+      bot: championship.type === 'solo' ? 'medium' : 'off',
+      botCount: 3,
+      laps: nextTrack.lapsDefault || 2,
+    };
+    setOptions(champOptions);
+    resetGame(champOptions, nextTrack);
+  }, [championship, options, resetGame]);
 
   return (
     <div className="h-[100dvh] min-h-0 w-full flex flex-col justify-between overflow-hidden bg-stone-950 text-stone-100 select-none touch-manipulation">
-      {/* 1. Top HUD Header */}
-      <HUD
-        circuit={currentCircuit}
-        gameState={gameState}
-        options={options}
-        trackLength={trackLength}
-        soundEnabled={soundEnabled}
-        onToggleSound={() => setSoundEnabled(sound.toggle())}
-        onOpenRules={() => setRulesOpen(true)}
-        onOpenSettings={() => setSettingsOpen(true)}
-        onOpenEditor={() => setEditorOpen(true)}
-        onOpenLog={() => setLogOpen(true)}
-        onOpenTrackSelector={() => setTrackSelectorOpen(true)}
-      />
-
-      {/* 2. Interactive SVG Track (Flex-1, auto-fit, zero scroll!) */}
-      <main className="flex-1 min-h-0 w-full relative flex items-center justify-center p-1 sm:p-2 overflow-hidden">
-        <TrackCanvas
-          track={currentCircuit}
-          segments={segments}
-          gameState={gameState}
-          options={options}
-          reach={currentReach}
-          selectedTarget={gameState.sel.tgt}
-          editorMode={editorActive}
-          onSelectTarget={handleSelectTarget}
-          onToggleCellEditor={handleToggleCellEditor}
-          onOpenTrackSelector={() => setTrackSelectorOpen(true)}
+      {screen === 'home' ? (
+        <HomePage
+          dailyTrack={dailyTrack}
+          availableTracks={availableTracks}
+          soundEnabled={soundEnabled}
+          onToggleSound={() => setSoundEnabled(sound.toggle())}
+          onOpenRules={() => setRulesOpen(true)}
+          onOpenEditor={() => setEditorOpen(true)}
+          onStartDailyPlay={handleStartDailyPlay}
+          onStartPickTrack={handleStartPickTrack}
+          onStartChampionship={handleStartChampionship}
+          activeChampionship={championship}
+          onResumeChampionship={() => setScreen('race')}
         />
-      </main>
+      ) : (
+        <>
+          {/* Top HUD Header with Home button & Championship indicator */}
+          <HUD
+            circuit={currentCircuit}
+            gameState={gameState}
+            options={options}
+            trackLength={trackLength}
+            soundEnabled={soundEnabled}
+            championship={championship}
+            onGoHome={() => setScreen('home')}
+            onToggleSound={() => setSoundEnabled(sound.toggle())}
+            onOpenRules={() => setRulesOpen(true)}
+            onOpenSettings={() => setSettingsOpen(true)}
+            onOpenEditor={() => setEditorOpen(true)}
+            onOpenLog={() => setLogOpen(true)}
+            onOpenTrackSelector={() => {
+              refreshAvailableTracks();
+              setTrackSelectorOpen(true);
+            }}
+          />
 
-      {/* 3. Bottom Ergonomic Action Deck */}
-      <ActionControls
-        gameState={gameState}
-        options={options}
-        isRolling={isRolling}
-        onRoll={handleRoll}
-        onSelectDie={handleSelectDie}
-        onAdjustTokens={handleAdjustTokens}
-        onLockIn={handleLockIn}
-        onReact={handleReact}
-        onStartPlayer2={handleStartPlayer2}
-        onNextStep={handleNextStep}
-        onResetGame={resetGame}
-      />
+          {/* Interactive SVG Track */}
+          <main className="flex-1 min-h-0 w-full relative flex items-center justify-center p-1 sm:p-2 overflow-hidden">
+            <TrackCanvas
+              track={currentCircuit}
+              segments={segments}
+              gameState={gameState}
+              options={options}
+              reach={currentReach}
+              selectedTarget={gameState.sel.tgt}
+              editorMode={editorActive}
+              onSelectTarget={handleSelectTarget}
+              onToggleCellEditor={handleToggleCellEditor}
+              onOpenTrackSelector={() => {
+                refreshAvailableTracks();
+                setTrackSelectorOpen(true);
+              }}
+            />
+          </main>
 
-      {/* Modals & Overlays */}
+          {/* Bottom Action Controls */}
+          <ActionControls
+            gameState={gameState}
+            options={options}
+            isRolling={isRolling}
+            onRoll={handleRoll}
+            onSelectDie={handleSelectDie}
+            onAdjustTokens={handleAdjustTokens}
+            onLockIn={handleConfirmMove}
+            onReact={handleConfirmMove}
+            onStartPlayer2={() => {}}
+            onNextStep={handleNextStep}
+            onResetGame={() => {
+              if (championship?.active) {
+                setChampionshipModalOpen(true);
+              } else {
+                resetGame();
+              }
+            }}
+          />
+        </>
+      )}
+
+      {/* Championship Standings & Season Modal */}
+      {championship && (
+        <ChampionshipStandingsModal
+          isOpen={championshipModalOpen}
+          onClose={() => setChampionshipModalOpen(false)}
+          championship={championship}
+          completedRaceIndex={completedRaceIndex}
+          lastRaceOrder={lastRaceOrder}
+          onNextRace={handleNextRaceInChampionship}
+          onRestartChampionship={() => {
+            setChampionshipModalOpen(false);
+            handleStartChampionship(championship.type, championship.totalRaces);
+          }}
+          onGoHome={() => {
+            setChampionshipModalOpen(false);
+            setScreen('home');
+          }}
+        />
+      )}
+
+      {/* Track Selector Modal */}
       <TrackSelectorModal
         isOpen={trackSelectorOpen}
         onClose={() => setTrackSelectorOpen(false)}
@@ -1005,14 +1089,14 @@ export default function App() {
         onOpenEditor={() => setEditorOpen(true)}
       />
 
+      {/* Rules Modal */}
       <RulesModal
         isOpen={rulesOpen}
         onClose={() => setRulesOpen(false)}
         options={options}
-        p1={gameState.P[0]}
-        p2={gameState.P[1]}
       />
 
+      {/* Settings Modal */}
       <SettingsModal
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
@@ -1021,6 +1105,7 @@ export default function App() {
         onRestartRace={resetGame}
       />
 
+      {/* Track Editor Architect Modal */}
       <TrackEditorModal
         isOpen={editorOpen}
         onClose={() => setEditorOpen(false)}
@@ -1034,6 +1119,7 @@ export default function App() {
         onRestartRace={resetGame}
       />
 
+      {/* Race Log Drawer */}
       <RaceLogDrawer
         isOpen={logOpen}
         onClose={() => setLogOpen(false)}

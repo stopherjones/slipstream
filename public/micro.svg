@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-14 -8 28 16" width="280" height="160">
+  <!-- Micro: Compact Pink/Purple City Microcar with White Accent Panels -->
+  <defs>
+    <filter id="microShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <!-- 4 Rubber Tires (Slightly stubby stance) -->
+  <rect x="4.2" y="-7.2" width="4.2" height="1.8" rx="0.6" fill="#090d16" />
+  <rect x="4.2" y="5.4" width="4.2" height="1.8" rx="0.6" fill="#090d16" />
+  <rect x="-7.8" y="-7.2" width="4.2" height="1.8" rx="0.6" fill="#090d16" />
+  <rect x="-7.8" y="5.4" width="4.2" height="1.8" rx="0.6" fill="#090d16" />
+
+  <!-- Outer Dark Chassis Rim -->
+  <path
+    d="M -9.8 -5.8 C -11.5 -5.8 -12 -4.5 -12 -2.5 L -12 2.5 C -12 4.5 -11.5 5.8 -9.8 5.8 L 7.8 5.8 C 9.8 5.8 11.2 4.2 11.6 1.8 L 11.6 -1.8 C 11.2 -4.2 9.8 -5.8 7.8 -5.8 Z"
+    fill="#2e0523"
+  />
+
+  <!-- Main Pastel Pink / Magenta Body Shell -->
+  <path
+    d="M -9.2 -5.2 C -10.8 -5.2 -11.2 -4 -11.2 -2.2 L -11.2 2.2 C -11.2 4 -10.8 5.2 -9.2 5.2 L 7.2 5.2 C 9.2 5.2 10.4 3.8 10.8 1.5 L 10.8 -1.5 C 10.4 -3.8 9.2 -5.2 7.2 -5.2 Z"
+    fill="#ec4899"
+  />
+
+  <!-- Side Accent Skirts -->
+  <rect x="-8.5" y="-5.2" width="15" height="0.6" fill="#db2777" />
+  <rect x="-8.5" y="4.6" width="15" height="0.6" fill="#db2777" />
+
+  <!-- Front Headlights (Bright White Sparkle) -->
+  <polygon points="8.6,-4.6 10.4,-3.6 9.8,-1.8 8,-2.4" fill="#ffffff" stroke="#fbcfe8" stroke-width="0.3" />
+  <polygon points="8.6,4.6 10.4,3.6 9.8,1.8 8,2.4" fill="#ffffff" stroke="#fbcfe8" stroke-width="0.3" />
+
+  <!-- Rear Taillights -->
+  <rect x="-11.2" y="-4.6" width="1.4" height="1.6" rx="0.3" fill="#be185d" />
+  <rect x="-11.2" y="3" width="1.4" height="1.6" rx="0.3" fill="#be185d" />
+
+  <!-- Short Hood with Pale White Gradient Accent -->
+  <path d="M 4 -3.2 L 9.2 -2.2 L 9.2 2.2 L 4 3.2 Z" fill="#fce7f3" opacity="0.85" />
+
+  <!-- Cabin Glasshouse Frame -->
+  <path
+    d="M -6.5 -4.4 L 3.5 -4.4 C 4.5 -4.4 5.2 -3 5.5 0 C 5.2 3 4.5 4.4 3.5 4.4 L -6.5 4.4 C -7.5 4.4 -8 3 -8.2 0 C -8 -3 -7.5 -4.4 -6.5 -4.4 Z"
+    fill="#1e1b4b"
+  />
+
+  <!-- Front Windshield Glass -->
+  <path
+    d="M 2.4 -3.8 L 3.8 -3.8 C 4.6 -3 5 -1.2 5 0 C 5 1.2 4.6 3 3.8 3.8 L 2.4 3.8 C 3 2.2 3.4 0 3.4 0 C 3.4 0 3 -2.2 2.4 -3.8 Z"
+    fill="#bae6fd"
+    opacity="0.9"
+  />
+
+  <!-- White Sunroof / Roof Panel -->
+  <rect x="-3.5" y="-3.4" width="5.8" height="6.8" rx="0.8" fill="#fdf2f8" stroke="#f472b6" stroke-width="0.5" />
+  <rect x="-2.5" y="-2.4" width="4" height="4.8" rx="0.5" fill="#fce7f3" />
+
+  <!-- Rear Window Glass -->
+  <path
+    d="M -7 -3.6 L -4.4 -3.8 L -4.4 3.8 L -7 3.6 C -7.6 2.4 -7.8 0 -7.8 0 C -7.8 0 -7.6 -2.4 -7 -3.6 Z"
+    fill="#7dd3fc"
+    opacity="0.8"
+  />
+
+  <!-- Rear Bumper Lip -->
+  <rect x="-9.8" y="-3.8" width="1" height="7.6" rx="0.4" fill="#9d174d" />
+</svg>

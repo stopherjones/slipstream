@@ -1,5 +1,5 @@
 import React from 'react';
-import { GameOptions, GameState, TrackDefinition } from '../types/game';
+import { ChampionshipState, GameOptions, GameState, TrackDefinition } from '../types/game';
 import { getRoundSteps } from '../game/engine';
 import {
   Volume2,
@@ -9,9 +9,10 @@ import {
   Sliders,
   History,
   Bot,
-  User,
   Compass,
   ChevronDown,
+  Home,
+  Trophy,
 } from 'lucide-react';
 
 interface HUDProps {
@@ -20,6 +21,8 @@ interface HUDProps {
   options: GameOptions;
   trackLength: number;
   soundEnabled: boolean;
+  championship?: ChampionshipState | null;
+  onGoHome?: () => void;
   onToggleSound: () => void;
   onOpenRules: () => void;
   onOpenSettings: () => void;
@@ -34,6 +37,8 @@ export const HUD: React.FC<HUDProps> = ({
   options,
   trackLength,
   soundEnabled,
+  championship,
+  onGoHome,
   onToggleSound,
   onOpenRules,
   onOpenSettings,
@@ -42,11 +47,8 @@ export const HUD: React.FC<HUDProps> = ({
   onOpenTrackSelector,
 }) => {
   const totalSteps = getRoundSteps(options, gameState.round);
-  const players = [...gameState.P, ...gameState.extraBots];
-  const leaderIdx = players.reduce(
-    (leader, player, idx) => (player.pos > players[leader].pos ? idx : leader),
-    0
-  );
+  const players = gameState.P;
+  const leaderIdx = gameState.lead ?? 0;
   const playerColors = [
     'bg-blue-600',
     'bg-orange-600',
@@ -65,6 +67,17 @@ export const HUD: React.FC<HUDProps> = ({
       {/* Top 1-row compact navigation */}
       <div className="flex items-center justify-between px-3 py-1.5 gap-2 max-w-5xl mx-auto w-full">
         <div className="flex items-center gap-1.5 min-w-0">
+          {onGoHome && (
+            <button
+              onClick={onGoHome}
+              title="Return to Home Menu"
+              aria-label="Home"
+              className="p-1.5 rounded-lg bg-stone-900 border border-stone-800 hover:border-amber-500/60 hover:bg-stone-800 text-stone-300 hover:text-white transition active:scale-95 shrink-0"
+            >
+              <Home className="w-4 h-4 text-amber-400" />
+            </button>
+          )}
+
           <div className="flex items-center gap-1.5 shrink-0">
             <span className="font-extrabold tracking-tight text-white text-base">
               SLIPSTREAM
@@ -87,16 +100,25 @@ export const HUD: React.FC<HUDProps> = ({
             <ChevronDown className="w-3 h-3 text-stone-400 group-hover:text-amber-400" />
           </button>
 
-          <div className="hidden sm:flex items-center gap-1 text-[11px] text-stone-400 font-medium">
-            <span className="text-amber-400 font-semibold uppercase text-[10px] tracking-wide">
-              {options.mode}
-            </span>
-            {options.bot === 'medium' && (
-              <span className="inline-flex items-center gap-0.5 text-stone-300 text-[10px]">
-                <Bot className="w-3 h-3 text-orange-400" /> AI
+          {championship?.active ? (
+            <div className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] font-bold">
+              <Trophy className="w-3.5 h-3.5 text-amber-400" />
+              <span>
+                Race {championship.currentRaceIndex + 1}/{championship.totalRaces}
               </span>
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className="hidden sm:flex items-center gap-1 text-[11px] text-stone-400 font-medium">
+              <span className="text-amber-400 font-semibold uppercase text-[10px] tracking-wide">
+                DICE
+              </span>
+              {options.bot === 'medium' && (
+                <span className="inline-flex items-center gap-0.5 text-stone-300 text-[10px]">
+                  <Bot className="w-3 h-3 text-orange-400" /> AI ({options.botCount} bot{options.botCount > 1 ? 's' : ''})
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Action icons */}
@@ -154,13 +176,16 @@ export const HUD: React.FC<HUDProps> = ({
           const lap = Math.min(options.laps, Math.floor(player.pos / trackLength) + 1);
           const space = ((player.pos % trackLength) + trackLength) % trackLength;
           const isLeader = leaderIdx === idx;
-          const label = idx === 0
+          const isChampionship = Boolean(championship?.active);
+          const label = isChampionship
+            ? championship?.standings[idx]?.name || `Driver ${idx + 1}`
+            : idx === 0
             ? 'P1'
             : options.bot === 'off' && idx === 1
-              ? 'P2'
-              : idx === 1
-                ? 'BOT'
-                : `BOT ${idx}`;
+            ? 'P2'
+            : idx === 1
+            ? 'BOT'
+            : `BOT ${idx}`;
 
           return (
             <div
@@ -195,9 +220,9 @@ export const HUD: React.FC<HUDProps> = ({
                     ⚡{player.mom}
                   </span>
                 )}
-                {options.head && player.head > 0 && (
-                  <span title="Headwind penalty" className="flex items-center gap-0.5 text-cyan-300 font-medium">
-                    🌬{player.head}
+                {isChampionship && (
+                  <span title="Championship Points" className="flex items-center gap-0.5 text-amber-300 font-bold bg-amber-500/20 px-1 rounded">
+                    {championship?.standings[idx]?.points ?? 0}pts
                   </span>
                 )}
               </div>

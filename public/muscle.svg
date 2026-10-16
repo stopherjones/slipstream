@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-14 -8 28 16" width="280" height="160">
+  <!-- Muscle Car: Yellow/Gold Classic with Dual Black Racing Stripes -->
+  <defs>
+    <filter id="muscleShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <!-- 4 Wide Rubber Tires -->
+  <rect x="5.2" y="-7.6" width="5" height="2.2" rx="0.8" fill="#090d16" />
+  <rect x="5.2" y="5.4" width="5" height="2.2" rx="0.8" fill="#090d16" />
+  <rect x="-9.5" y="-7.6" width="5.2" height="2.2" rx="0.8" fill="#090d16" />
+  <rect x="-9.5" y="5.4" width="5.2" height="2.2" rx="0.8" fill="#090d16" />
+
+  <!-- Outer Dark Chassis Rim -->
+  <path
+    d="M -12 -6.2 C -13.2 -6.2 -13.6 -4.8 -13.6 -2.8 L -13.6 2.8 C -13.6 4.8 -13.2 6.2 -12 6.2 L 9.5 6.2 C 11.8 6.2 12.8 4.6 13.2 2.2 L 13.2 -2.2 C 12.8 -4.6 11.8 -6.2 9.5 -6.2 Z"
+    fill="#291a05"
+  />
+
+  <!-- Main Golden Yellow Body Shell -->
+  <path
+    d="M -11.5 -5.5 C -12.6 -5.5 -12.8 -4.2 -12.8 -2.4 L -12.8 2.4 C -12.8 4.2 -12.6 5.5 -11.5 5.5 L 9 5.5 C 11.2 5.5 12.2 4 12.5 1.8 L 12.5 -1.8 C 12.2 -4 11.2 -5.5 9 -5.5 Z"
+    fill="#eab308"
+  />
+
+  <!-- Dual Black Racing Stripes (Top to Bottom across entire car length!) -->
+  <!-- Stripe 1 (Upper) -->
+  <path
+    d="M -12.8 -2.2 L 12.5 -2.2 L 12.5 -0.7 L -12.8 -0.7 Z"
+    fill="#1c1917"
+  />
+  <!-- Stripe 2 (Lower) -->
+  <path
+    d="M -12.8 0.7 L 12.5 0.7 L 12.5 2.2 L -12.8 2.2 Z"
+    fill="#1c1917"
+  />
+
+  <!-- Front Chrome Grille / Bumper Block -->
+  <rect x="11.5" y="-3.6" width="1.2" height="7.2" rx="0.4" fill="#44403c" />
+  <line x1="12.2" y1="-3" x2="12.2" y2="3" stroke="#a8a29e" stroke-width="0.5" />
+
+  <!-- Front Headlights (Amber / Warm Glow) -->
+  <rect x="10.8" y="-5.2" width="1.6" height="1.6" rx="0.4" fill="#fef08a" stroke="#ca8a04" stroke-width="0.3" />
+  <rect x="10.8" y="3.6" width="1.6" height="1.6" rx="0.4" fill="#fef08a" stroke="#ca8a04" stroke-width="0.3" />
+
+  <!-- Rear Taillights (Red / Amber) -->
+  <rect x="-12.8" y="-5.2" width="1.2" height="1.8" rx="0.3" fill="#ea580c" />
+  <rect x="-12.8" y="3.4" width="1.2" height="1.8" rx="0.3" fill="#ea580c" />
+
+  <!-- Cabin Glasshouse Frame -->
+  <path
+    d="M -7 -4.6 L 4 -4.6 C 5.2 -4.6 6 -3.2 6.4 0 C 6 3.2 5.2 4.6 4 4.6 L -7 4.6 C -8 -4.6 -8.4 3 -8.6 0 C -8.4 -3 -8 -4.6 -7 -4.6 Z"
+    fill="#0c0a09"
+  />
+
+  <!-- Front Windshield Glass -->
+  <path
+    d="M 2.6 -4 L 4 -4 C 5 -3 5.4 -1 5.4 0 C 5.4 1 5 3 4 4 L 2.6 4 C 3.4 2.4 3.8 0 3.8 0 C 3.8 0 3.4 -2.4 2.6 -4 Z"
+    fill="#bae6fd"
+    opacity="0.9"
+  />
+
+  <!-- Roof Panel with racing stripes continuing over glass -->
+  <rect x="-4.2" y="-3.6" width="6.4" height="7.2" rx="0.6" fill="#ca8a04" />
+  <rect x="-4.2" y="-2.2" width="6.4" height="1.5" fill="#1c1917" />
+  <rect x="-4.2" y="0.7" width="6.4" height="1.5" fill="#1c1917" />
+
+  <!-- Rear Window Glass -->
+  <path
+    d="M -7.8 -3.8 L -4.8 -4 L -4.8 4 L -7.8 3.8 C -8.2 2.4 -8.4 0 -8.4 0 C -8.4 0 -8.2 -2.4 -7.8 -3.8 Z"
+    fill="#7dd3fc"
+    opacity="0.8"
+  />
+
+  <!-- Rear Ducktail Spoiler -->
+  <rect x="-11.4" y="-4.6" width="1.2" height="9.2" rx="0.4" fill="#a16207" />
+</svg>

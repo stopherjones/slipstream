@@ -1,16 +1,12 @@
-export type GameMode = 'dice' | 'cards';
-
 export type BotDifficulty = 'off' | 'medium';
 
 export interface GameOptions {
-  mode: GameMode;
   bot: BotDifficulty;
   botCount: 1 | 2 | 3;
   laps: number;
   mom: boolean;   // Momentum token rule
-  head: boolean;  // Headwind rule
   skip: boolean;  // Skip rule (leader skips highest, trailer skips lowest)
-  pass: boolean;  // Slipstream pass rule (jump ahead if landing behind/on opponent)
+  pass: boolean;  // Slipstream pass rule (advance ahead if landing behind single opponent with open space)
 }
 
 export interface PlayerState {
@@ -20,9 +16,6 @@ export interface PlayerState {
   used: number[];
   slip: number;
   mom: number;
-  head: number;
-  deck: number[];
-  played: number[];
   tot: number;
   cnt: number;
 }
@@ -34,7 +27,7 @@ export interface TargetSelection {
   tgt: { pos: number; lane: number } | null;
 }
 
-export type GamePhase = 'roll' | 'pick0' | 'pick1' | 'cover' | 'react' | 'result' | 'over';
+export type GamePhase = 'roll' | 'turn' | 'pick0' | 'pick1' | 'cover' | 'react' | 'result' | 'over';
 
 export interface LogEntry {
   id: string;
@@ -57,7 +50,7 @@ export type TrackSectionType = 'T' | 'S' | 'L' | 'R' | 'SL' | 'SR';
 
 export interface TrackCellMeta {
   type: 'T' | 'S' | 'C';
-  outsideLane?: 0 | 1; // 1 if turning right (left lane is outside), 0 if turning left (right lane is outside)
+  outsideLane?: 0 | 1;
 }
 
 export interface TrackDefinition {
@@ -67,8 +60,8 @@ export interface TrackDefinition {
   description: string;
   difficulty: 'Beginner' | 'Intermediate' | 'Pro';
   lapsDefault: number;
-  segments: string[]; // 9 segments fallback
-  sections?: TrackSectionType[]; // Section-based layout: T/S straights and L/R (double) or SL/SR (single) 45° corners
+  segments: string[];
+  sections?: TrackSectionType[];
   cellTypes?: TrackCellMeta[];
   waypoints?: Waypoint[];
 }
@@ -81,7 +74,7 @@ export interface CircuitCellRender {
   poly1: string;
   center0: [number, number];
   center1: [number, number];
-  angle: number; // tangent direction in degrees (0..360)
+  angle: number;
   kerbPoly?: string;
   kerbSide?: 'left' | 'right';
 }
@@ -104,22 +97,42 @@ export interface CircuitRenderGeometry {
   };
 }
 
+export interface ChampionshipStanding {
+  playerIdx: number;
+  name: string;
+  points: number;
+  wins: number;
+  secondPlaces: number;
+  thirdPlaces: number;
+  fourthPlaces: number;
+  history: number[]; // points per race
+}
+
+export interface ChampionshipState {
+  active: boolean;
+  type: 'solo' | 'pass-and-play';
+  currentRaceIndex: number;
+  totalRaces: number;
+  tracks: TrackDefinition[];
+  standings: ChampionshipStanding[];
+}
+
 export interface GameState {
   round: number;
   step: number;
-  lead: number; // 0 or 1
-  tr: number;   // trailing player index in current step
-  spd: [number, number];
-  dv: [number, number];
+  turnIdx: number;       // Current index in turnOrder
+  turnOrder: number[];   // Array of player indices ordered from 1st to last place
+  lead: number;          // Leader player index (turnOrder[0])
+  tr: number;            // Current active player index
+  spd: number[];
+  dv: number[];
   phase: GamePhase;
-  P: [PlayerState, PlayerState];
-  extraBots: PlayerState[];
-  picks: [TargetSelection | null, TargetSelection | null];
+  P: PlayerState[];
+  picks: (TargetSelection | null)[];
   log: LogEntry[];
   win: number | null;
   sel: TargetSelection;
-  discardedCards?: [number[], number[]];
-  discardedDice?: [number[], number[]];
+  discardedDice?: number[][];
 }
 
 export interface GeoCell {

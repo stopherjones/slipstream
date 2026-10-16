@@ -1,22 +1,17 @@
 import React from 'react';
-import { GameMode, GameOptions, PlayerState } from '../types/game';
-import { CARDS, getCardOrDieLabel } from '../game/engine';
-import { X, BookOpen, Layers } from 'lucide-react';
+import { GameOptions } from '../types/game';
+import { X, BookOpen, Dices, ShieldAlert, Award } from 'lucide-react';
 
 interface RulesModalProps {
   isOpen: boolean;
   onClose: () => void;
   options: GameOptions;
-  p1: PlayerState;
-  p2: PlayerState;
 }
 
 export const RulesModal: React.FC<RulesModalProps> = ({
   isOpen,
   onClose,
   options,
-  p1,
-  p2,
 }) => {
   if (!isOpen) return null;
 
@@ -42,97 +37,80 @@ export const RulesModal: React.FC<RulesModalProps> = ({
         <div className="p-4 overflow-y-auto space-y-4 text-xs text-stone-300 leading-relaxed">
           {/* Overview */}
           <section className="bg-stone-950/50 p-3 rounded-xl border border-stone-800/80">
-            <h3 className="font-bold text-white text-sm mb-1">🏁 Race Overview</h3>
+            <h3 className="font-bold text-white text-sm mb-1 flex items-center gap-1.5">
+              <span>🏁</span>
+              <span>Race Overview</span>
+            </h3>
             <p>
-              Slipstream is a two-player tactical racer around a circuit with tight chicanes and high-speed straights.
-              You race anti-clockwise starting from the chequered finish line.
+              Slipstream is a tactical board racer.
+              Cars race anti-clockwise around high-speed straights, chicanes, and bottlenecks, starting from behind the checkered finish line.
             </p>
           </section>
 
-          {/* Cards / Dice explanation */}
-          <section className="space-y-1.5">
-            <h3 className="font-bold text-white text-sm">
-              {options.mode === 'cards' ? '🃏 Card Mode Rules' : '🎲 Dice Mode Rules'}
+          {/* Grid & Turn Order */}
+          <section className="space-y-1.5 bg-stone-950/50 p-3 rounded-xl border border-stone-800/80">
+            <h3 className="font-bold text-white text-sm flex items-center gap-1.5">
+              <Award className="w-4 h-4 text-amber-400" />
+              <span>Starting Grid & Turn Order</span>
             </h3>
-            {options.mode === 'cards' ? (
+            <p>
+              • <strong>Starting Grid</strong>: All drivers line up in their own cell, in a random allocation, behind the start / finish line.
+            </p>
+            <p>
+              • <strong>Race Order</strong>: Each player moves independently, starting with the driver currently in 1st place, followed by 2nd place, 3rd place, and 4th place.
+            </p>
+            <p>
+              • <strong>Inside Track Priority</strong>: Where cars are on the same section of track, the car on the inside track goes first. The inside track matches the side of the current corner, or the side of the upcoming corner if on a straight.
+            </p>
+          </section>
+
+          {/* Dice & Discard Rules */}
+          <section className="space-y-1.5 bg-stone-950/50 p-3 rounded-xl border border-stone-800/80">
+            <h3 className="font-bold text-white text-sm flex items-center gap-1.5">
+              <Dices className="w-4 h-4 text-amber-400" />
+              <span>Dice & Discard Rule</span>
+            </h3>
+            <p>
+              Each round, all drivers roll 5 standard dice (5d6).
+            </p>
+            <p>
+              <strong>Round 1 Opening</strong>: All 5 dice are active on the opening turn of the race (no dice discarded).
+            </p>
+            {options.skip && (
               <p>
-                Each player draws 3 cards per round from their private 12-card deck (values 1–9, J, Q, K).
-                Played cards remain face-up and out of play until all 12 cards have been played over 4 rounds, after which the deck reshuffles.
-              </p>
-            ) : (
-              <p>
-                Each round, both players roll 5 standard dice (5d6) in secret.
-                <strong> On the very first turn of the race (Round 1)</strong>, all 5 dice are kept and played across 5 steps!
-                {options.skip && (
-                  <span>
-                    {' '}From Round 2 onwards, the Discard Rule takes effect: the race leader discards their highest die and the trailing player discards their lowest die (shown crossed out in red).
-                  </span>
-                )}
+                <strong>Round 2 Onwards</strong>: The race leader discards their highest die, while trailing drivers discard their lowest die!
               </p>
             )}
           </section>
 
-          {/* Card Tracker if card mode */}
-          {options.mode === 'cards' && (
-            <section className="bg-stone-950 p-3 rounded-xl border border-stone-800 space-y-2">
-              <div className="flex items-center gap-1.5 text-stone-200 font-semibold text-xs">
-                <Layers className="w-4 h-4 text-amber-400" />
-                <span>Deck Cycle Tracker</span>
-              </div>
-              <div className="space-y-1.5">
-                {[0, 1].map((pIdx) => {
-                  const p = pIdx === 0 ? p1 : p2;
-                  return (
-                    <div key={`deck-${pIdx}`} className="flex items-center gap-2">
-                      <span className={`w-4 h-4 rounded-full text-[10px] font-bold flex items-center justify-center text-white ${pIdx === 0 ? 'bg-blue-600' : 'bg-orange-600'}`}>
-                        {pIdx + 1}
-                      </span>
-                      <div className="flex flex-wrap gap-1">
-                        {CARDS.map((c) => {
-                          const isPlayed = p.played.includes(c);
-                          return (
-                            <span
-                              key={`p-${pIdx}-${c}`}
-                              className={`w-6 h-7 rounded border flex items-center justify-center font-mono font-bold text-xs ${
-                                isPlayed
-                                  ? 'bg-stone-800 border-stone-700 text-stone-500 line-through opacity-50'
-                                  : 'bg-stone-100 border-white text-stone-900 shadow-sm'
-                              }`}
-                            >
-                              {getCardOrDieLabel(c, 'cards')}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <p className="text-[10px] text-stone-400">
-                Crossed out = already discarded. Cards still active are in hand or deck.
-              </p>
-            </section>
-          )}
-
-          {/* Turn & Secret Selection */}
-          <section className="space-y-1.5">
-            <h3 className="font-bold text-white text-sm">🏎 Turn Sequence & Bluffing</h3>
+          {/* Collisions & Slipstreaming */}
+          <section className="space-y-1.5 bg-stone-950/50 p-3 rounded-xl border border-stone-800/80">
+            <h3 className="font-bold text-white text-sm flex items-center gap-1.5">
+              <ShieldAlert className="w-4 h-4 text-amber-400" />
+              <span>Movement, Blockages & Slipstream</span>
+            </h3>
             <p>
-              1. <strong>Leader Commits</strong>: The player ahead commits their die/card, optional booster tokens, and target lane secretly and moves first.
+              • <strong>No Driving Through Cars</strong>: Cars cannot travel through other cars — they must go round them via open lanes.
             </p>
             <p>
-              2. <strong>Trailer Reacts</strong>: The trailing player reveals their die/card, but crucially decides their booster tokens and exact target lane <em>after seeing where the leader ends up!</em>
+              • <strong>Blockages</strong>: If both lanes of the track ahead are blocked by cars (or a single-lane bottleneck is occupied), advancing past them is impossible — trailing cars are blocked and must stop behind them.
+            </p>
+            <p>
+              • <strong>Slipstream Pass</strong>: You can only slipstream if there is space to move around the car you are drafting.
+            </p>
+            <p>
+              • <strong>Single Car Limit</strong>: You can only slipstream one car. If you finish behind a column of two cars, you must take your place behind them without jumping both.
             </p>
           </section>
 
-          {/* Special Mechanics */}
+          {/* Tokens */}
           <section className="space-y-2">
             <h3 className="font-bold text-white text-sm">⚡ Tactical Tokens</h3>
             <div className="grid grid-cols-1 gap-2">
               <div className="bg-stone-950/60 p-2.5 rounded-lg border border-stone-800">
                 <span className="font-bold text-sky-400">🌀 Slipstream (+1 pip):</span>
                 <p className="text-stone-300 mt-0.5">
-                  Earned when following closely behind the lead car. Spend to accelerate +1 pip per token.
+                  Earned when finishing closely behind the car ahead. Spend tokens to accelerate your move by +1 pip each.
                 </p>
               </div>
 
@@ -140,31 +118,11 @@ export const RulesModal: React.FC<RulesModalProps> = ({
                 <div className="bg-stone-950/60 p-2.5 rounded-lg border border-stone-800">
                   <span className="font-bold text-amber-400">⚡ Momentum (+2 pips):</span>
                   <p className="text-stone-300 mt-0.5">
-                    Awarded to the race leader at the end of each round. Worth +2 pips of speed!
-                  </p>
-                </div>
-              )}
-
-              {options.head && (
-                <div className="bg-stone-950/60 p-2.5 rounded-lg border border-stone-800">
-                  <span className="font-bold text-cyan-300">🌬 Headwind Penalty:</span>
-                  <p className="text-stone-300 mt-0.5">
-                    Driving out front cuts down top speed. Rolls of 4, 5, or 6 incur a -1 penalty.
+                    Awarded to the race leader at the end of each round. Worth +2 pips of extra acceleration!
                   </p>
                 </div>
               )}
             </div>
-          </section>
-
-          {/* Corners & Bottlenecks */}
-          <section className="space-y-1.5">
-            <h3 className="font-bold text-white text-sm">🛑 Track Lanes & Corners</h3>
-            <p>
-              • <strong>Inside vs Outside Lane</strong>: On straights, both lanes cost 1 pip per space. On corners, the outside lane is <strong>split into two spaces</strong> (costing 2 pips total to traverse), while the inside lane around the apex kerb is a single space.
-            </p>
-            <p>
-              • <strong>Bottlenecks (Brown single-lane)</strong>: Both cars share the lane. You cannot pass through or land on an opponent in a bottleneck!
-            </p>
           </section>
         </div>
 

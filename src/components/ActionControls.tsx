@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { GameOptions, GameState, TargetSelection } from '../types/game';
 import {
   calculateEffectiveValue,
-  getCardOrDieLabel,
   getRoundSteps,
   getActivePlayerIndex,
   getLeaderIndex,
@@ -55,15 +54,17 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
   }, [isRolling]);
 
   const activeIdx = getActivePlayerIndex(gameState);
-  const activePlayer = gameState.P[activeIdx];
-  const isLeader = getLeaderIndex(gameState.P, gameState.lead) === activeIdx;
+  const activePlayer = gameState.P[activeIdx] ?? gameState.P[0];
+  const isLeader = (gameState.lead ?? 0) === activeIdx;
+  const isBotActive = options.bot === 'medium' && activeIdx > 0;
+  const isTurn = gameState.phase === 'turn';
   const isReact = gameState.phase === 'react';
   const isPicking = gameState.phase === 'pick0' || gameState.phase === 'pick1';
   const isBotReacting = options.bot === 'medium' && isReact && gameState.tr === 1;
 
   const sel = gameState.sel;
-  const canAdjustTokens = isReact || (isPicking && isLeader);
-  const showHand = (isRolling && options.mode === 'dice') || isPicking || isReact;
+  const canAdjustTokens = !isBotActive && (isTurn || isReact || (isPicking && isLeader));
+  const showHand = isRolling || isTurn || isPicking || isReact;
 
   let actionLabel = 'Roll Dice';
   let actionDisabled = false;
@@ -71,8 +72,27 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
   let ActionIcon = Dices;
 
   if (gameState.phase === 'roll') {
-    actionLabel = options.mode === 'cards' ? 'Draw Cards' : 'Roll Dice';
+    actionLabel = 'Roll Dice';
     actionDisabled = isRolling;
+  } else if (isTurn) {
+    if (isBotActive) {
+      actionLabel = `AI Bot ${activeIdx} Moving...`;
+      actionDisabled = true;
+      ActionIcon = Lock;
+    } else {
+      actionHandler = onReact;
+      ActionIcon = ArrowRight;
+      if (sel.die === null) {
+        actionLabel = 'Select Die';
+        actionDisabled = true;
+      } else if (!sel.tgt) {
+        actionLabel = 'Select Destination Space';
+        actionDisabled = true;
+      } else {
+        actionLabel = 'Confirm Move';
+        actionDisabled = false;
+      }
+    }
   } else if (gameState.phase === 'pick0' || gameState.phase === 'pick1') {
     actionHandler = onLockIn;
     ActionIcon = Lock;
@@ -110,15 +130,6 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
 
   // Dice Pip renderer
   const renderDieFace = (val: number, isDiscarded: boolean = false) => {
-    if (options.mode === 'cards') {
-      return (
-        <span className={`font-bold text-base tracking-tight font-mono ${isDiscarded ? 'line-through text-red-400' : ''}`}>
-          {getCardOrDieLabel(val, 'cards')}
-        </span>
-      );
-    }
-
-    // Standard dice pips
     const dotClasses = 'w-1.5 h-1.5 rounded-full bg-stone-900';
     return (
       <div className="w-5 h-5 grid grid-cols-3 grid-rows-3 p-0.5 items-center justify-items-center">
@@ -215,7 +226,7 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
           </div>
 
           <div className="flex h-8 shrink-0 items-center justify-between gap-2 px-1">
-            {(isPicking || isReact) && !isBotReacting && (
+            {(isTurn || isPicking || isReact) && !isBotActive && (
               <>
                 <div className="flex items-center gap-1.5 rounded-md border border-stone-800 bg-stone-900/80 px-2 py-1">
                   <span className="text-[11px] font-medium text-sky-400">Slip +1</span>

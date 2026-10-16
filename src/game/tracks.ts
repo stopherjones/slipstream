@@ -287,7 +287,36 @@ export function getCircuitById(id: string): TrackDefinition {
   return TRACK_PRESETS[0];
 }
 
-export function loadStoredTrack(mode: 'dice' | 'cards'): string[] {
+export function getAllAvailableTracks(): TrackDefinition[] {
+  const custom = loadSavedCustomTracks();
+  const customDefs: TrackDefinition[] = custom.map((c) => {
+    const parsedSections =
+      c.sections ?? (c.code ? parseSectionTrackCode(c.code) ?? undefined : undefined);
+    const segs =
+      c.segments ?? (c.code ? parseTrackCode(c.code) : null) ?? DEFAULT_TRACK_SEGMENTS.dice;
+    return {
+      id: c.id ?? c.name.toLowerCase().replace(/\s+/g, '-'),
+      name: c.name,
+      country: c.country || 'Custom 🏁',
+      description: c.description || 'Custom crafted player circuit.',
+      difficulty: c.difficulty || 'Intermediate',
+      lapsDefault: c.lapsDefault || 2,
+      segments: segs,
+      sections: parsedSections,
+    };
+  });
+  return [...TRACK_PRESETS, ...customDefs];
+}
+
+export function getDailyTrack(dateStr?: string): TrackDefinition {
+  const all = getAllAvailableTracks();
+  const date = dateStr ? new Date(dateStr) : new Date();
+  const seed = date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate();
+  const index = Math.abs(seed) % all.length;
+  return all[index];
+}
+
+export function loadStoredTrack(mode: string = 'dice'): string[] {
   try {
     const raw = localStorage.getItem('slip_cur');
     if (raw) {
@@ -300,11 +329,13 @@ export function loadStoredTrack(mode: 'dice' | 'cards'): string[] {
   } catch {
     // fallback
   }
-  return DEFAULT_TRACK_SEGMENTS[mode];
+  return DEFAULT_TRACK_SEGMENTS.dice;
 }
 
-export function saveStoredTrack(mode: 'dice' | 'cards', segments: string[]) {
+export function saveStoredTrack(modeOrSegments: string | string[], maybeSegments?: string[]) {
   try {
+    const segments = Array.isArray(modeOrSegments) ? modeOrSegments : (maybeSegments ?? DEFAULT_TRACK_SEGMENTS.dice);
+    const mode = typeof modeOrSegments === 'string' ? modeOrSegments : 'dice';
     let currentData: Record<string, string[]> = {};
     const raw = localStorage.getItem('slip_cur');
     if (raw) currentData = JSON.parse(raw);

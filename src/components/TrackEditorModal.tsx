@@ -16,7 +16,6 @@ import {
   SavedTrackItem,
 } from '../game/tracks';
 import {
-  CARDS,
   computeReach,
   createInitialPlayer,
   getEndPosition,
@@ -317,8 +316,8 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
           let round = 1;
 
           while (p0.pos < endPos && p1.pos < endPos && round < 40) {
-            p0.dice = shuffle(CARDS).slice(0, 3);
-            p1.dice = shuffle(CARDS).slice(0, 3);
+            p0.dice = Array.from({ length: 5 }, () => 1 + Math.floor(Math.random() * 6));
+            p1.dice = Array.from({ length: 5 }, () => 1 + Math.floor(Math.random() * 6));
 
             const d0 = p0.dice[0];
             const d1 = p1.dice[0];
@@ -332,7 +331,7 @@ export const TrackEditorModal: React.FC<TrackEditorModalProps> = ({
             if (k0) p0.pos = Number(k0.split(':')[0]);
             if (k1) p1.pos = Number(k1.split(':')[0]);
 
-            const newLead = getLeaderIndex([p0, p1], lead);
+            const newLead = getLeaderIndex([p0, p1]);
             if (newLead !== lead) {
               leadChanges++;
               lead = newLead;

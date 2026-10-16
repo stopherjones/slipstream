@@ -1,6 +1,6 @@
 import React from 'react';
-import { BotDifficulty, GameMode, GameOptions } from '../types/game';
-import { X, Settings2, Bot, User, Dices, Layers } from 'lucide-react';
+import { BotDifficulty, GameOptions } from '../types/game';
+import { X, Settings2, Bot, User } from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -18,12 +18,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onRestartRace,
 }) => {
   if (!isOpen) return null;
-
-  const setMode = (mode: GameMode) => {
-    if (mode === options.mode) return;
-    onChangeOptions((prev) => ({ ...prev, mode }));
-    onRestartRace({ mode });
-  };
 
   const setBot = (bot: BotDifficulty) => {
     if (bot === options.bot) return;
@@ -44,7 +38,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     onRestartRace({ laps: next });
   };
 
-  const toggleOption = (key: keyof Pick<GameOptions, 'mom' | 'head' | 'skip' | 'pass'>) => {
+  const toggleOption = (key: keyof Pick<GameOptions, 'mom' | 'skip' | 'pass'>) => {
     const nextValue = !options[key];
     onChangeOptions((prev) => ({ ...prev, [key]: nextValue }));
     if (key === 'skip' || key === 'pass') {
@@ -72,38 +66,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {/* Settings Body */}
         <div className="p-4 overflow-y-auto space-y-4 text-xs text-stone-200">
-          {/* Mode */}
-          <div className="space-y-1.5">
-            <span className="font-semibold text-white block">Engine Mode</span>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => setMode('dice')}
-                className={`py-2 px-3 rounded-xl border flex items-center justify-center gap-2 font-medium transition ${
-                  options.mode === 'dice'
-                    ? 'bg-amber-500/20 border-amber-500 text-amber-300 font-bold'
-                    : 'bg-stone-950/60 border-stone-800 text-stone-400 hover:text-stone-200'
-                }`}
-              >
-                <Dices className="w-4 h-4" />
-                <span>🎲 Dice (5d6)</span>
-              </button>
-              <button
-                onClick={() => setMode('cards')}
-                className={`py-2 px-3 rounded-xl border flex items-center justify-center gap-2 font-medium transition ${
-                  options.mode === 'cards'
-                    ? 'bg-amber-500/20 border-amber-500 text-amber-300 font-bold'
-                    : 'bg-stone-950/60 border-stone-800 text-stone-400 hover:text-stone-200'
-                }`}
-              >
-                <Layers className="w-4 h-4" />
-                <span>🃏 Cards (Deck)</span>
-              </button>
-            </div>
-          </div>
-
           {/* Opponent */}
           <div className="space-y-1.5">
-            <span className="font-semibold text-white block">Opponents</span>
+            <span className="font-semibold text-white block">Drivers & Opponents</span>
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => setBot('off')}
@@ -129,10 +94,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </button>
             </div>
             {options.bot === 'medium' && (
-              <div className="flex items-center justify-between rounded-xl border border-stone-800 bg-stone-950/60 px-3 py-2">
+              <div className="flex items-center justify-between rounded-xl border border-stone-800 bg-stone-950/60 px-3 py-2 mt-2">
                 <div>
-                  <span className="font-semibold text-white block">Number of AI bots</span>
-                  <span className="text-[11px] text-stone-400">Race against 1–3 bots</span>
+                  <span className="font-semibold text-white block">Number of AI Bots</span>
+                  <span className="text-[11px] text-stone-400">Race against 1–3 bots (2–4 total cars)</span>
                 </div>
                 <div className="flex items-center gap-1">
                   {([1, 2, 3] as const).map((count) => (
@@ -201,30 +166,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </button>
             </div>
 
-            {/* Headwind */}
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="font-semibold text-white block">🌬 Headwind Drag</span>
-                <span className="text-[11px] text-stone-400">
-                  {options.mode === 'cards'
-                    ? 'Leader takes -1 on cards of 5+ after slipstream'
-                    : 'Leader takes -1 on dice rolls of 4, 5, or 6'}
-                </span>
-              </div>
-              <button
-                onClick={() => toggleOption('head')}
-                className={`w-12 h-6 rounded-full transition-colors relative ${
-                  options.head ? 'bg-amber-500' : 'bg-stone-800'
-                }`}
-              >
-                <span
-                  className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
-                    options.head ? 'right-0.5' : 'left-0.5'
-                  }`}
-                />
-              </button>
-            </div>
-
             {/* Discard / Skip Rule */}
             <div className="flex items-center justify-between">
               <div>
@@ -251,7 +192,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <div className="flex items-center justify-between">
               <div>
                 <span className="font-semibold text-white block">➜ Slipstream Pass</span>
-                <span className="text-[11px] text-stone-400">Finish right behind opponent to overtake</span>
+                <span className="text-[11px] text-stone-400">
+                  Landing right behind a single car jumps ahead if passing lane is free
+                </span>
               </div>
               <button
                 onClick={() => toggleOption('pass')}
@@ -270,19 +213,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-3 border-t border-stone-800 shrink-0 bg-stone-950 flex gap-2">
-          <button
-            onClick={() => {
-              onRestartRace();
-              onClose();
-            }}
-            className="flex-1 py-2.5 rounded-xl font-bold text-xs bg-amber-500 hover:bg-amber-400 text-stone-950 transition"
-          >
-            Restart With These Rules
-          </button>
+        <div className="px-4 py-3 bg-stone-950 border-t border-stone-800 flex justify-end shrink-0">
           <button
             onClick={onClose}
-            className="px-4 py-2.5 rounded-xl font-bold text-xs bg-stone-800 hover:bg-stone-700 text-stone-200 transition"
+            className="px-4 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold transition active:scale-95"
           >
             Done
           </button>

@@ -14,7 +14,7 @@ import {
   tangentAngle,
 } from '../game/geometry';
 import { computeSectionTrackGeometry } from '../game/sectionGeometry';
-import { getJumpTarget, getPassTarget } from '../game/engine';
+import { getPassTarget } from '../game/engine';
 import { CarToken } from './CarToken';
 import { Maximize2, ZoomIn, ZoomOut, Target } from 'lucide-react';
 
@@ -120,7 +120,7 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
     const map: Record<string, { n: number; c: number }> = {};
     for (const k in reach) {
       const [n, l] = k.split(':').map(Number);
-      map[`${n % NC}:${l}`] = { n, c: reach[k] };
+      map[`${((n % NC) + NC) % NC}:${l}`] = { n, c: reach[k] };
     }
     return map;
   }, [reach, NC]);
@@ -170,7 +170,7 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
   );
 
   // Animated Car Rendering State: smooth movement along the track
-  const gameCars = [...gameState.P, ...gameState.extraBots];
+  const gameCars = gameState.P;
   const leaderCarIdx = gameCars.reduce(
     (leader, car, idx) => (car.pos > gameCars[leader].pos ? idx : leader),
     0
@@ -514,20 +514,22 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
         <span className="hidden sm:inline">P1</span>
       </button>
 
-      {/* Snap to Car 2 (Red Saloon) */}
-      <button
-        type="button"
-        onClick={() => handleSnapToCar(1)}
-        title={`Snap to ${options.bot === 'medium' ? 'AI Bot' : 'Player 2'} (Red Saloon)`}
-        className={`flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-semibold transition-all ${
-          focusMode === 'p2'
-            ? 'bg-rose-600/30 text-rose-300 border border-rose-400 shadow-sm shadow-rose-500/20'
-            : 'text-stone-300 hover:text-rose-300 hover:bg-stone-800'
-        }`}
-      >
-        <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block shadow-sm ring-1 ring-rose-300" />
-        <span className="hidden sm:inline">{options.bot === 'medium' ? 'Bot' : 'P2'}</span>
-      </button>
+      {/* Snap to Car 2 (Pass & Play Human Only - No Bot Snap Button) */}
+      {options.bot === 'off' && (
+        <button
+          type="button"
+          onClick={() => handleSnapToCar(1)}
+          title="Snap to Player 2 (Red Saloon)"
+          className={`flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-semibold transition-all ${
+            focusMode === 'p2'
+              ? 'bg-rose-600/30 text-rose-300 border border-rose-400 shadow-sm shadow-rose-500/20'
+              : 'text-stone-300 hover:text-rose-300 hover:bg-stone-800'
+          }`}
+        >
+          <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block shadow-sm ring-1 ring-rose-300" />
+          <span className="hidden sm:inline">P2</span>
+        </button>
+      )}
 
       {/* Vertical separator */}
       <div className="w-[1px] h-3.5 bg-stone-700 mx-0.5" />
@@ -689,7 +691,7 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
                       selectedTarget.lane === lane;
 
                     const carsHere = gameState.P.map((p, q) =>
-                      p.pos % NC === cell.idx && (isBottleneck || p.lane === lane) ? q : -1
+                      ((p.pos % NC) + NC) % NC === cell.idx && (isBottleneck || p.lane === lane) ? q : -1
                     ).filter((q) => q >= 0);
 
                     return (
@@ -761,22 +763,15 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
                                   strokeWidth: '2.5px',
                                 }}
                               >
-                                {getJumpTarget(
+                                {getPassTarget(
                                   activePlayerIdx,
-                                  currentDie,
                                   hm.n,
+                                  lane,
                                   gameState,
                                   trackArray,
-                                  options
+                                  options,
+                                  track.sections
                                 )
-                                  ? '★'
-                                  : getPassTarget(
-                                      activePlayerIdx,
-                                      hm.n,
-                                      gameState,
-                                      trackArray,
-                                      options
-                                    )
                                   ? '➜'
                                   : ''}
                                 {isSelected ? '✓' : hm.c}
@@ -1017,7 +1012,7 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
                   const [cx, cy] = at(cell.g, mid, oc);
 
                   const carsHere = gameState.P.map((p, q) =>
-                    p.pos % NC === idx && (isBottleneck || p.lane === lane) ? q : -1
+                    ((p.pos % NC) + NC) % NC === idx && (isBottleneck || p.lane === lane) ? q : -1
                   ).filter((q) => q >= 0);
 
                   const isOutsideCorner = isCorner && lane === 1;
@@ -1090,22 +1085,15 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
                                 strokeWidth: '2.5px',
                               }}
                             >
-                              {getJumpTarget(
+                              {getPassTarget(
                                 activePlayerIdx,
-                                currentDie,
                                 hm.n,
+                                lane,
                                 gameState,
                                 trackArray,
-                                options
+                                options,
+                                track.sections
                               )
-                                ? '★'
-                                : getPassTarget(
-                                    activePlayerIdx,
-                                    hm.n,
-                                    gameState,
-                                    trackArray,
-                                    options
-                                  )
                                 ? '➜'
                                 : ''}
                               {isSelected ? '✓' : hm.c}
@@ -1113,8 +1101,7 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
                           )}
                         </g>
                       )}
-
-                      </g>
+                    </g>
                   );
                 })}
 
