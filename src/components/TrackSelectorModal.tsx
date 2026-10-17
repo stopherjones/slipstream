@@ -12,6 +12,7 @@ import {
   LANE_WIDTH,
 } from '../game/geometry';
 import { computeSectionTrackGeometry } from '../game/sectionGeometry';
+import { getTrackTheme } from '../game/trackThemes';
 import { sound } from '../game/audio';
 import { X, Trophy, Flag, Check, Compass, Sliders, Layers } from 'lucide-react';
 
@@ -125,6 +126,8 @@ export const TrackSelectorModal: React.FC<TrackSelectorModalProps> = ({
               ? circuit.sections!.filter((s) => s === 'S' || s === 'SL' || s === 'SR').length
               : circuit.segments.join('').split('').filter((c) => c === 'S').length;
 
+            const circuitTheme = getTrackTheme(circuit.id);
+
             return (
               <div
                 key={circuit.id}
@@ -135,8 +138,8 @@ export const TrackSelectorModal: React.FC<TrackSelectorModalProps> = ({
                 }}
                 className={`relative group rounded-xl p-3 border transition-all cursor-pointer flex flex-col gap-2.5 ${
                   isSelected
-                    ? 'bg-amber-950/20 border-amber-500/80 shadow-lg shadow-amber-500/5 ring-1 ring-amber-500/40'
-                    : 'bg-stone-950/60 border-stone-800/90 hover:border-stone-700 hover:bg-stone-950/90'
+                    ? 'bg-amber-950/30 border-amber-500 shadow-lg shadow-amber-500/10 ring-1 ring-amber-500/50'
+                    : 'bg-stone-900/90 border-stone-800 hover:border-stone-600 hover:bg-stone-900 shadow-md'
                 }`}
               >
                 {/* Top Row: Country Flag, Name & Status */}
@@ -153,7 +156,12 @@ export const TrackSelectorModal: React.FC<TrackSelectorModalProps> = ({
                         </span>
                       )}
                     </div>
-                    <p className="text-[11px] text-stone-400 mt-1 line-clamp-2">
+                    <div className="text-[11px] text-amber-300/90 font-medium mt-0.5 flex items-center gap-1.5 flex-wrap">
+                      <span>📍 {circuitTheme.landmark}</span>
+                      <span className="text-stone-500">·</span>
+                      <span className="text-stone-400 font-mono text-[10px]">{circuitTheme.weatherFlavour}</span>
+                    </div>
+                    <p className="text-[11px] text-stone-300 mt-1 line-clamp-2 leading-relaxed">
                       {circuit.description}
                     </p>
                   </div>
@@ -161,10 +169,10 @@ export const TrackSelectorModal: React.FC<TrackSelectorModalProps> = ({
                   <span
                     className={`shrink-0 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
                       circuit.difficulty === 'Beginner'
-                        ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-800/50'
+                        ? 'bg-emerald-950/70 text-emerald-300 border border-emerald-600/60'
                         : circuit.difficulty === 'Intermediate'
-                        ? 'bg-blue-950/60 text-blue-400 border border-blue-800/50'
-                        : 'bg-rose-950/60 text-rose-400 border border-rose-800/50'
+                        ? 'bg-blue-950/70 text-blue-300 border border-blue-600/60'
+                        : 'bg-rose-950/70 text-rose-300 border border-rose-600/60'
                     }`}
                   >
                     {circuit.difficulty}
@@ -173,10 +181,17 @@ export const TrackSelectorModal: React.FC<TrackSelectorModalProps> = ({
 
                 {/* Middle: Mini Track Geometry Preview & Telemetry */}
                 <div className="flex items-center gap-3 pt-1">
-                  {/* Thumbnail SVG */}
-                  <div className="w-24 h-16 rounded-lg bg-stone-900 border border-stone-800 flex items-center justify-center p-1 shrink-0 overflow-hidden">
-                    {secGeo ? (
-                      <svg viewBox={secGeo.viewBox} className="w-full h-full">
+                  {/* Thumbnail Preview with Local Scenic Backdrop + SVG Track */}
+                  <div className="w-28 h-20 rounded-xl border border-stone-700/80 relative flex items-center justify-center p-1 shrink-0 overflow-hidden shadow-inner group-hover:border-stone-500 transition">
+                    <img
+                      src={circuitTheme.image}
+                      alt=""
+                      className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:opacity-75 transition duration-300"
+                    />
+                    <div className="absolute inset-0 bg-stone-950/40 backdrop-blur-[1px]" />
+                    <div className="relative z-10 w-full h-full flex items-center justify-center">
+                      {secGeo ? (
+                        <svg viewBox={secGeo.viewBox} className="w-full h-full drop-shadow-md">
                         {secGeo.cells.map((cell) => (
                           <polygon
                             key={`st-${cell.idx}`}
@@ -238,6 +253,7 @@ export const TrackSelectorModal: React.FC<TrackSelectorModalProps> = ({
                         />
                       </svg>
                     ) : null}
+                    </div>
                   </div>
 
                   {/* Telemetry Stats */}

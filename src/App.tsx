@@ -10,6 +10,7 @@ import {
   GameOptions,
   GameState,
   LogEntry,
+  PlayerState,
   ReachMap,
   TargetSelection,
   TrackDefinition,
@@ -46,6 +47,7 @@ import {
   saveCurrentCircuitId,
   saveStoredTrack,
 } from './game/tracks';
+import { getTrackTheme } from './game/trackThemes';
 import { sound } from './game/audio';
 import { HUD } from './components/HUD';
 import { TrackCanvas } from './components/TrackCanvas';
@@ -122,6 +124,11 @@ export default function App() {
     return getCircuitById(savedId);
   });
 
+  const currentTheme = useMemo(
+    () => getTrackTheme(currentCircuit.id),
+    [currentCircuit.id]
+  );
+
   // All available circuits (standard presets + custom saved tracks)
   const [availableTracks, setAvailableTracks] = useState<TrackDefinition[]>(() =>
     getAllAvailableTracks()
@@ -165,7 +172,7 @@ export default function App() {
 
   // Initialize starting lineup behind the finish line
   const [gameState, setGameState] = useState<GameState>(() => {
-    const numPlayers = options.bot === 'medium' ? 1 + options.botCount : 2;
+    const numPlayers = 1 + (options.botCount || 1);
     const initialPlayers = createStartingGrid(numPlayers, currentCircuit.sections, trackLength);
     const turnOrder = getTurnOrder(initialPlayers, currentCircuit.sections, trackLength);
     const initialLead = turnOrder[0];
@@ -215,13 +222,11 @@ export default function App() {
         activeCircuit.segments.reduce((acc, s) => acc + s.length, 0);
 
       const resetOptions = { ...options, ...overrides };
-      // In Championship, always 4 players
+      // In Championship, always 4 players; otherwise 2–4 players based on botCount
       const numPlayers =
-        resetOptions.botCount === 3 && (resetOptions.bot === 'off' || resetOptions.bot === 'medium')
+        championship?.active
           ? 4
-          : resetOptions.bot === 'medium'
-          ? 1 + resetOptions.botCount
-          : 2;
+          : 1 + (resetOptions.botCount || 1);
 
       const initialPlayers = createStartingGrid(numPlayers, activeCircuit.sections, tLen);
       const turnOrder = getTurnOrder(initialPlayers, activeCircuit.sections, tLen);
@@ -275,10 +280,10 @@ export default function App() {
       sound.playRoll();
       setIsRolling(false);
       setGameState((prev) => {
-        const rollPlayer = (p: typeof prev.P[number]) => ({
+        const rollPlayer = (p: typeof prev.P[number]): PlayerState => ({
           ...p,
           dice: Array.from({ length: 5 }, () => 1 + Math.floor(Math.random() * 6)),
-          used: [],
+          used: [] as number[],
         });
 
         const nextP = prev.P.map(rollPlayer);
@@ -296,23 +301,38 @@ export default function App() {
         };
 
         // Discard / Skip rule (active from round 2 onwards)
+        // Discard / Skip rule (active from round 2 onwards)
         const nextDiscardedDice: number[][] = nextP.map(() => []);
         const shouldDiscard = options.skip && prev.round > 1;
 
         if (shouldDiscard) {
-          // Leader discards highest die; trailing drivers discard lowest die
-          for (let i = 0; i < nextP.length; i++) {
-            const dice = nextP[i].dice;
-            const targetVal =
-              i === leader ? Math.max(...dice) : Math.min(...dice);
-            const k = dice.indexOf(targetVal);
-            nextDiscardedDice[i] = [k];
+          // Leader discards highest die; trailer (last place) discards lowest die
+          // In 3p and 4p, middle drivers (players 2 and 3 in position order) do NOT discard
+          // and will have a die left over at the end of each round!
+          const trailer = turnOrder[turnOrder.length - 1];
+
+          // Leader discards highest die
+          const leaderDice = nextP[leader].dice;
+          const maxVal = Math.max(...leaderDice);
+          const leaderDiscardIdx = leaderDice.indexOf(maxVal);
+          nextDiscardedDice[leader] = [leaderDiscardIdx];
+
+          // Trailer (last place) discards lowest die (if distinct from leader)
+          if (trailer !== leader) {
+            const trailerDice = nextP[trailer].dice;
+            const minVal = Math.min(...trailerDice);
+            const trailerDiscardIdx = trailerDice.indexOf(minVal);
+            nextDiscardedDice[trailer] = [trailerDiscardIdx];
           }
 
           const leaderVal = nextP[leader].dice[nextDiscardedDice[leader][0]];
+          const trailerVal = nextP[trailer]?.dice[nextDiscardedDice[trailer]?.[0]];
           const discardLog: LogEntry = {
             id: `discard-${Date.now()}`,
-            t: `Discard rule: P${leader + 1} (leader) discards highest (${leaderVal}); trailers discard lowest die.`,
+            t:
+              nextP.length > 2
+                ? `Discard rule: P${leader + 1} (leader) discards highest (${leaderVal}); P${trailer + 1} (trailer) discards lowest (${trailerVal}); middle drivers keep all 5 dice (1 left over at round end).`
+                : `Discard rule: P${leader + 1} (leader) discards highest (${leaderVal}); P${trailer + 1} (trailer) discards lowest (${trailerVal}).`,
           };
           sound.playDiscard();
 
@@ -320,19 +340,24 @@ export default function App() {
           const activeP = nextP[activePlayerIdx];
           const initialSel = createEmptySelection();
 
-          // Auto-select first available die for human player 0 if human's turn
-          if (activePlayerIdx === 0 && options.bot === 'medium') {
-            const availDie = activeP.dice.findIndex((_, idx) => !nextDiscardedDice[0]?.includes(idx));
+          // Auto-select first available valid die for human player if human's turn
+          const isNextHuman = options.bot === 'off' || activePlayerIdx === 0;
+          if (isNextHuman) {
+            const availDie = activeP.dice.findIndex(
+              (_: number, idx: number) =>
+                !nextDiscardedDice[activePlayerIdx]?.includes(idx) &&
+                !activeP.used.includes(idx)
+            );
             if (availDie >= 0) {
               initialSel.die = availDie;
               const reachVal = calculateEffectiveValue(
-                0,
+                activePlayerIdx,
                 initialSel,
                 activeP.dice[availDie],
                 { ...prev, P: nextP },
                 options
               );
-              const reachMap = computeReach(0, reachVal, { ...prev, P: nextP }, trackArray, options, outsideLanes);
+              const reachMap = computeReach(activePlayerIdx, reachVal, { ...prev, P: nextP }, trackArray, options, outsideLanes);
               const reachKeys = Object.keys(reachMap).filter((k) => k !== `${activeP.pos}:${activeP.lane}`);
               if (reachKeys.length > 0) {
                 const bestKey = reachKeys[reachKeys.length - 1];
@@ -366,22 +391,25 @@ export default function App() {
           const activeP = nextP[activePlayerIdx];
           const initialSel = createEmptySelection();
 
-          if (activePlayerIdx === 0 && options.bot === 'medium') {
-            const availDie = 0;
-            initialSel.die = availDie;
-            const reachVal = calculateEffectiveValue(
-              0,
-              initialSel,
-              activeP.dice[availDie],
-              { ...prev, P: nextP },
-              options
-            );
-            const reachMap = computeReach(0, reachVal, { ...prev, P: nextP }, trackArray, options, outsideLanes);
-            const reachKeys = Object.keys(reachMap).filter((k) => k !== `${activeP.pos}:${activeP.lane}`);
-            if (reachKeys.length > 0) {
-              const bestKey = reachKeys[reachKeys.length - 1];
-              const [tgPos, tgLane] = bestKey.split(':').map(Number);
-              initialSel.tgt = { pos: tgPos, lane: tgLane };
+          const isNextHuman = options.bot === 'off' || activePlayerIdx === 0;
+          if (isNextHuman) {
+            const availDie = activeP.dice.findIndex((_: number, idx: number) => !activeP.used.includes(idx));
+            if (availDie >= 0) {
+              initialSel.die = availDie;
+              const reachVal = calculateEffectiveValue(
+                activePlayerIdx,
+                initialSel,
+                activeP.dice[availDie],
+                { ...prev, P: nextP },
+                options
+              );
+              const reachMap = computeReach(activePlayerIdx, reachVal, { ...prev, P: nextP }, trackArray, options, outsideLanes);
+              const reachKeys = Object.keys(reachMap).filter((k) => k !== `${activeP.pos}:${activeP.lane}`);
+              if (reachKeys.length > 0) {
+                const bestKey = reachKeys[reachKeys.length - 1];
+                const [tgPos, tgLane] = bestKey.split(':').map(Number);
+                initialSel.tgt = { pos: tgPos, lane: tgLane };
+              }
             }
           }
 
@@ -410,7 +438,7 @@ export default function App() {
       setGameState((prev) => {
         const activeIdx = prev.tr;
         const p = prev.P[activeIdx];
-        if (!p || p.used.includes(dieIndex)) return prev;
+        if (!p || p.used.includes(dieIndex) || prev.discardedDice?.[activeIdx]?.includes(dieIndex)) return prev;
 
         const nextSel: TargetSelection = {
           ...prev.sel,
@@ -650,7 +678,9 @@ export default function App() {
         const isNextHuman = options.bot === 'off' || nextActiveIdx === 0;
         if (isNextHuman) {
           const availDie = nextP[nextActiveIdx].dice.findIndex(
-            (_, dIdx) => !nextP[nextActiveIdx].used.includes(dIdx)
+            (_, dIdx) =>
+              !nextP[nextActiveIdx].used.includes(dIdx) &&
+              !currentState.discardedDice?.[nextActiveIdx]?.includes(dIdx)
           );
           if (availDie >= 0) {
             nextSel.die = availDie;
@@ -751,8 +781,11 @@ export default function App() {
   const handleConfirmMove = useCallback(() => {
     const activeIdx = gameState.turnOrder[gameState.turnIdx];
     if (gameState.sel.die === null || !gameState.sel.tgt) return;
+    // Discarded dice and already-used dice can never be confirmed or used
+    if (gameState.discardedDice?.[activeIdx]?.includes(gameState.sel.die)) return;
+    if (gameState.P[activeIdx]?.used.includes(gameState.sel.die)) return;
     setGameState((prev) => executePlayerMove(activeIdx, prev.sel, prev));
-  }, [gameState.turnOrder, gameState.turnIdx, gameState.sel, executePlayerMove]);
+  }, [gameState.turnOrder, gameState.turnIdx, gameState.sel, gameState.discardedDice, gameState.P, executePlayerMove]);
 
   // Next step or round advance handler
   const handleNextStep = useCallback(() => {
@@ -780,7 +813,9 @@ export default function App() {
         const isNextHuman = options.bot === 'off' || activeIdx === 0;
         if (isNextHuman) {
           const availDie = prev.P[activeIdx].dice.findIndex(
-            (_, dIdx) => !prev.P[activeIdx].used.includes(dIdx)
+            (_, dIdx) =>
+              !prev.P[activeIdx].used.includes(dIdx) &&
+              !prev.discardedDice?.[activeIdx]?.includes(dIdx)
           );
           if (availDie >= 0) {
             initialSel.die = availDie;
@@ -981,7 +1016,13 @@ export default function App() {
   }, [championship, options, resetGame]);
 
   return (
-    <div className="h-[100dvh] min-h-0 w-full flex flex-col justify-between overflow-hidden bg-stone-950 text-stone-100 select-none touch-manipulation">
+    <div
+      className={`h-[100dvh] min-h-0 w-full flex flex-col justify-between overflow-hidden text-stone-100 select-none touch-manipulation transition-colors duration-700 ${
+        screen === 'home'
+          ? 'bg-gradient-to-b from-stone-950 via-stone-900 to-stone-950'
+          : `bg-gradient-to-b ${currentTheme.pageGradient}`
+      }`}
+    >
       {screen === 'home' ? (
         <HomePage
           dailyTrack={dailyTrack}

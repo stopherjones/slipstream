@@ -82,7 +82,9 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
     } else {
       actionHandler = onReact;
       ActionIcon = ArrowRight;
-      if (sel.die === null) {
+      const isSelectedDiscarded = sel.die !== null && Boolean(gameState.discardedDice?.[activeIdx]?.includes(sel.die));
+      const isSelectedUsed = sel.die !== null && Boolean(activePlayer.used.includes(sel.die));
+      if (sel.die === null || isSelectedDiscarded || isSelectedUsed) {
         actionLabel = 'Select Die';
         actionDisabled = true;
       } else if (!sel.tgt) {
@@ -96,7 +98,9 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
   } else if (gameState.phase === 'pick0' || gameState.phase === 'pick1') {
     actionHandler = onLockIn;
     ActionIcon = Lock;
-    if (sel.die === null) {
+    const isSelectedDiscarded = sel.die !== null && Boolean(gameState.discardedDice?.[activeIdx]?.includes(sel.die));
+    const isSelectedUsed = sel.die !== null && Boolean(activePlayer.used.includes(sel.die));
+    if (sel.die === null || isSelectedDiscarded || isSelectedUsed) {
       actionLabel = 'Select Die';
       actionDisabled = true;
     } else if (isLeader && !sel.tgt) {
@@ -106,8 +110,10 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
       actionLabel = 'Lock In Choice';
     }
   } else if (isReact) {
+    const isSelectedDiscarded = sel.die !== null && Boolean(gameState.discardedDice?.[activeIdx]?.includes(sel.die));
+    const isSelectedUsed = sel.die !== null && Boolean(activePlayer.used.includes(sel.die));
     actionLabel = 'Confirm Move';
-    actionDisabled = !sel.tgt || isBotReacting;
+    actionDisabled = !sel.tgt || isBotReacting || isSelectedDiscarded || isSelectedUsed;
     actionHandler = onReact;
     ActionIcon = ArrowRight;
   } else if (gameState.phase === 'cover') {
@@ -188,7 +194,7 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
             {showHand && (isRolling ? rollingDice : activePlayer.dice).map((val, idx) => {
               const isDiscarded = !isRolling && Boolean(gameState.discardedDice?.[activeIdx]?.includes(idx));
               const isPlayed = !isRolling && !isDiscarded && activePlayer.used.includes(idx);
-              const isSelected = !isRolling && sel.die === idx;
+              const isSelected = !isRolling && !isDiscarded && !isPlayed && sel.die === idx;
 
               return (
                 <button
@@ -202,22 +208,22 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
                       ? `Played die (${val}) - already used this round`
                       : `Select die ${val}`
                   }
-                  className={`h-11 w-11 sm:h-12 sm:w-12 rounded-lg relative flex shrink-0 items-center justify-center border transition-all ${
+                  className={`h-11 w-11 sm:h-12 sm:w-12 rounded-xl relative flex shrink-0 items-center justify-center border transition-all ${
                     isDiscarded
-                      ? 'bg-stone-100 border-stone-300 text-stone-900 opacity-90'
+                      ? 'bg-stone-300 border-stone-400 text-stone-900 opacity-80 cursor-not-allowed select-none shadow-none ring-0'
                       : isPlayed
-                      ? 'bg-stone-900 border-stone-800 text-stone-600 opacity-30'
+                      ? 'bg-stone-900 border-stone-800 text-stone-600 opacity-25'
                       : isSelected
-                      ? 'bg-amber-400 border-amber-300 text-stone-950 shadow-md ring-2 ring-amber-300'
-                      : 'bg-stone-100 hover:bg-white border-stone-200 text-stone-900 shadow'
+                      ? 'bg-gradient-to-b from-amber-300 to-amber-500 border-amber-300 text-stone-950 shadow-lg shadow-amber-500/30 ring-2 ring-amber-300 scale-105'
+                      : 'bg-gradient-to-b from-stone-50 to-stone-200 hover:from-white hover:to-stone-100 border-stone-300 text-stone-900 shadow-md active:scale-95'
                   } ${isRolling ? (idx % 2 === 0 ? 'animate-dice-tumble-a' : 'animate-dice-tumble-b') : ''}`}
                   style={isRolling ? { animationDelay: `${idx * 40}ms` } : undefined}
                 >
                   {renderDieFace(val, isDiscarded)}
                   {isDiscarded && (
-                    <svg className="absolute inset-0 h-full w-full p-1.5" viewBox="0 0 44 44">
-                      <line x1="8" y1="8" x2="36" y2="36" stroke="#dc2626" strokeWidth="3.5" strokeLinecap="round" strokeOpacity="0.45" />
-                      <line x1="36" y1="8" x2="8" y2="36" stroke="#dc2626" strokeWidth="3.5" strokeLinecap="round" strokeOpacity="0.45" />
+                    <svg className="absolute inset-0 h-full w-full p-1.5 pointer-events-none" viewBox="0 0 44 44">
+                      <line x1="8" y1="8" x2="36" y2="36" stroke="#dc2626" strokeWidth="3.5" strokeLinecap="round" strokeOpacity="0.7" />
+                      <line x1="36" y1="8" x2="8" y2="36" stroke="#dc2626" strokeWidth="3.5" strokeLinecap="round" strokeOpacity="0.7" />
                     </svg>
                   )}
                 </button>
@@ -228,37 +234,37 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
           <div className="flex h-8 shrink-0 items-center justify-between gap-2 px-1">
             {(isTurn || isPicking || isReact) && !isBotActive && (
               <>
-                <div className="flex items-center gap-1.5 rounded-md border border-stone-800 bg-stone-900/80 px-2 py-1">
-                  <span className="text-[11px] font-medium text-sky-400">Slip +1</span>
+                <div className="flex items-center gap-1.5 rounded-lg border border-sky-500/30 bg-sky-950/40 px-2 py-1">
+                  <span className="text-[11px] font-bold text-sky-300">Slip +1</span>
                   <button
                     disabled={!canAdjustTokens || sel.slip <= 0}
                     onClick={() => onAdjustTokens('slip', -1)}
-                    className="h-6 w-6 rounded bg-stone-800 font-bold text-white disabled:opacity-30"
+                    className="h-6 w-6 rounded bg-stone-800 hover:bg-stone-700 font-bold text-white disabled:opacity-30 transition"
                     aria-label="Use less slipstream"
                   >−</button>
-                  <span className="min-w-7 text-center font-mono text-xs font-bold tabular-nums">{sel.slip}/{activePlayer.slip}</span>
+                  <span className="min-w-7 text-center font-mono text-xs font-black text-sky-200 tabular-nums">{sel.slip}/{activePlayer.slip}</span>
                   <button
                     disabled={!canAdjustTokens || sel.slip >= activePlayer.slip}
                     onClick={() => onAdjustTokens('slip', 1)}
-                    className="h-6 w-6 rounded bg-stone-800 font-bold text-white disabled:opacity-30"
+                    className="h-6 w-6 rounded bg-stone-800 hover:bg-stone-700 font-bold text-white disabled:opacity-30 transition"
                     aria-label="Use more slipstream"
                   >+</button>
                 </div>
 
                 {options.mom && (
-                  <div className="flex items-center gap-1.5 rounded-md border border-stone-800 bg-stone-900/80 px-2 py-1">
-                    <span className="text-[11px] font-medium text-amber-400">Mom +2</span>
+                  <div className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-950/40 px-2 py-1">
+                    <span className="text-[11px] font-bold text-amber-300">Mom +2</span>
                     <button
                       disabled={!canAdjustTokens || sel.mom <= 0}
                       onClick={() => onAdjustTokens('mom', -1)}
-                      className="h-6 w-6 rounded bg-stone-800 font-bold text-white disabled:opacity-30"
+                      className="h-6 w-6 rounded bg-stone-800 hover:bg-stone-700 font-bold text-white disabled:opacity-30 transition"
                       aria-label="Use less momentum"
                     >−</button>
-                    <span className="min-w-7 text-center font-mono text-xs font-bold tabular-nums">{sel.mom}/{activePlayer.mom}</span>
+                    <span className="min-w-7 text-center font-mono text-xs font-black text-amber-200 tabular-nums">{sel.mom}/{activePlayer.mom}</span>
                     <button
                       disabled={!canAdjustTokens || sel.mom >= activePlayer.mom}
                       onClick={() => onAdjustTokens('mom', 1)}
-                      className="h-6 w-6 rounded bg-stone-800 font-bold text-white disabled:opacity-30"
+                      className="h-6 w-6 rounded bg-stone-800 hover:bg-stone-700 font-bold text-white disabled:opacity-30 transition"
                       aria-label="Use more momentum"
                     >+</button>
                   </div>
@@ -271,14 +277,18 @@ export const ActionControls: React.FC<ActionControlsProps> = ({
         <button
           disabled={actionDisabled}
           onClick={actionHandler}
-          className={`w-full rounded-lg px-4 text-sm font-bold shadow-md flex items-center justify-center gap-2 transition active:scale-[0.99] disabled:bg-stone-800 disabled:text-stone-500 ${
-            isReact
-              ? 'bg-amber-500 text-stone-950 hover:bg-amber-400'
+          className={`w-full rounded-xl px-4 text-sm font-black shadow-lg flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:bg-stone-900 disabled:text-stone-500 disabled:border disabled:border-stone-800 disabled:shadow-none ${
+            gameState.phase === 'roll'
+              ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-400 text-stone-950 hover:brightness-110 shadow-orange-500/30'
+              : isTurn && sel.tgt
+              ? 'bg-gradient-to-r from-emerald-400 via-teal-400 to-emerald-500 text-stone-950 hover:brightness-110 shadow-emerald-500/30 font-black'
+              : isReact
+              ? 'bg-gradient-to-r from-amber-500 to-amber-400 text-stone-950 hover:brightness-110 shadow-amber-500/30'
               : gameState.phase === 'result'
-              ? 'bg-emerald-500 text-stone-950 hover:bg-emerald-400'
+              ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-stone-950 hover:brightness-110 shadow-emerald-500/25'
               : gameState.phase === 'over'
-              ? 'bg-stone-100 text-stone-950 hover:bg-white'
-              : 'bg-blue-600 text-white hover:bg-blue-500'
+              ? 'bg-gradient-to-r from-amber-400 to-amber-300 text-stone-950 shadow-amber-400/30'
+              : 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:brightness-110 shadow-blue-600/25'
           }`}
         >
           <ActionIcon className="h-4 w-4" />

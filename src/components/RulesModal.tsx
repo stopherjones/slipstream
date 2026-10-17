@@ -78,7 +78,7 @@ export const RulesModal: React.FC<RulesModalProps> = ({
             </p>
             {options.skip && (
               <p>
-                <strong>Round 2 Onwards</strong>: The race leader discards their highest die, while trailing drivers discard their lowest die!
+                <strong>Round 2 Onwards</strong>: The race leader discards their highest die, while the trailing driver in last place discards their lowest die! In 3-player and 4-player races, middle drivers (P2 & P3) do not discard and keep all 5 dice (with 1 die left over at the end of the 4-step round). Discarded dice are not available to select or use.
               </p>
             )}
           </section>

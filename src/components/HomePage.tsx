@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { computeSectionTrackGeometry } from '../game/sectionGeometry';
 import { computeTrackGeometry } from '../game/geometry';
+import { getTrackTheme } from '../game/trackThemes';
 
 interface HomePageProps {
   dailyTrack: TrackDefinition;
@@ -204,33 +205,55 @@ export const HomePage: React.FC<HomePageProps> = ({
                 </p>
               </div>
 
-              {/* Track Preview Map */}
-              <div className="h-28 w-full bg-stone-950/80 rounded-xl border border-stone-800/80 p-2 flex items-center justify-center relative overflow-hidden">
-                {miniSvgPath ? (
-                  <svg viewBox={viewBox} className="h-full w-full max-h-24">
-                    <path
-                      d={miniSvgPath}
-                      fill="none"
-                      stroke="#44403c"
-                      strokeWidth="12"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
+              {/* Track Preview Map with Local Flavour Backdrop */}
+              {(() => {
+                const dailyTheme = getTrackTheme(dailyTrack.id);
+                return (
+                  <div className="h-28 w-full rounded-xl border border-stone-700/80 p-2 flex items-center justify-center relative overflow-hidden shadow-inner group-hover:border-amber-500/50 transition">
+                    <img
+                      src={dailyTheme.image}
+                      alt={dailyTheme.name}
+                      className="absolute inset-0 w-full h-full object-cover opacity-60 brightness-95 group-hover:opacity-75 transition duration-500"
                     />
-                    <path
-                      d={miniSvgPath}
-                      fill="none"
-                      stroke="#f59e0b"
-                      strokeWidth="3"
-                      strokeDasharray="4 3"
-                    />
-                  </svg>
-                ) : (
-                  <div className="text-[11px] text-stone-500 font-mono">Circuit Preview</div>
-                )}
-                <div className="absolute bottom-1.5 right-2 px-1.5 py-0.5 rounded bg-stone-900/90 border border-stone-800 text-[10px] font-mono text-stone-300">
-                  {dailyTrack.sections?.length || dailyTrack.segments.join('').length} spaces
-                </div>
-              </div>
+                    <div className="absolute inset-0 bg-stone-950/40 backdrop-blur-[1px]" />
+                    {miniSvgPath ? (
+                      <svg viewBox={viewBox} className="h-full w-full max-h-24 relative z-10 drop-shadow-md">
+                        <path
+                          d={miniSvgPath}
+                          fill="none"
+                          stroke="#1c1917"
+                          strokeWidth="14"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        <path
+                          d={miniSvgPath}
+                          fill="none"
+                          stroke="#44403c"
+                          strokeWidth="10"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        <path
+                          d={miniSvgPath}
+                          fill="none"
+                          stroke="#f59e0b"
+                          strokeWidth="3"
+                          strokeDasharray="4 3"
+                        />
+                      </svg>
+                    ) : (
+                      <div className="text-[11px] text-stone-300 font-mono relative z-10">Circuit Preview</div>
+                    )}
+                    <div className="absolute bottom-1.5 left-2 px-1.5 py-0.5 rounded bg-stone-950/90 border border-stone-700 text-[9px] font-mono font-semibold text-amber-300 relative z-10">
+                      📍 {dailyTheme.landmark}
+                    </div>
+                    <div className="absolute bottom-1.5 right-2 px-1.5 py-0.5 rounded bg-stone-950/90 border border-stone-700 text-[10px] font-mono text-stone-200 relative z-10">
+                      {dailyTrack.sections?.length || dailyTrack.segments.join('').length} spaces
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Opponent Selection for Daily Play */}
               <div className="space-y-1.5 pt-1">

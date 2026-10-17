@@ -15,6 +15,7 @@ import {
 } from '../game/geometry';
 import { computeSectionTrackGeometry } from '../game/sectionGeometry';
 import { getPassTarget } from '../game/engine';
+import { getTrackTheme } from '../game/trackThemes';
 import { CarToken } from './CarToken';
 import { Maximize2, ZoomIn, ZoomOut, Target } from 'lucide-react';
 
@@ -67,6 +68,7 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
   } | null>(null);
 
   const isSectionTrack = Boolean(track.sections && track.sections.length > 0);
+  const theme = useMemo(() => getTrackTheme(track.id), [track.id]);
 
   // Reset zoom & pan when track switches
   useEffect(() => {
@@ -581,25 +583,61 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
         onTouchEnd={handleTouchEnd}
         className="w-full h-full relative flex items-center justify-center p-1 sm:p-2 select-none overflow-hidden touch-none cursor-grab active:cursor-grabbing"
       >
+        {/* Local Flavour Ambient Backdrop Image */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden select-none">
+          <img
+            src={theme.image}
+            alt={theme.name}
+            className="w-full h-full object-cover opacity-80 sm:opacity-85 brightness-95 saturate-110 contrast-105 transition-all duration-700"
+          />
+          {/* Subtle perimeter vignette to protect HUD and ActionControls legibility */}
+          <div className="absolute inset-0 bg-gradient-to-t from-stone-950/90 via-transparent to-stone-950/70 pointer-events-none" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_45%,rgba(10,12,18,0.55)_100%)] pointer-events-none" />
+        </div>
+
+        {/* Local Flavour Atmosphere Pill */}
+        <div className="absolute top-2 left-2 sm:top-3 sm:left-3 z-30 flex items-center gap-2 bg-stone-950/85 backdrop-blur-md border border-stone-700/80 rounded-xl px-2.5 py-1.5 shadow-xl select-none max-w-[260px] sm:max-w-none">
+          <span className="text-base select-none">{track.country.split(' ')[1] || '🏁'}</span>
+          <div className="flex flex-col min-w-0">
+            <div className="flex items-center gap-1.5 leading-none">
+              <span className="font-bold text-white text-xs truncate">{theme.landmark}</span>
+              <span className={`text-[10px] font-semibold px-1.5 py-0.2 rounded ${theme.badgeBg} ${theme.badgeBorder} ${theme.badgeText} border hidden xs:inline`}>
+                {track.name}
+              </span>
+            </div>
+            <span className="text-[10px] text-stone-300 font-mono tracking-tight truncate mt-0.5">
+              {theme.weatherFlavour}
+            </span>
+          </div>
+        </div>
+
         {renderZoomToolbar()}
 
         <svg
           viewBox={sectionGeo.viewBox}
-          className="w-full h-full max-h-[48vh] sm:max-h-[52vh] drop-shadow-2xl"
-          style={{ filter: 'drop-shadow(0 12px 24px rgba(0,0,0,0.5))' }}
+          className="w-full h-full max-h-[48vh] sm:max-h-[52vh] drop-shadow-2xl relative z-10"
+          style={{ filter: 'drop-shadow(0 14px 28px rgba(0,0,0,0.65))' }}
         >
           <defs>
             <pattern id="checkeredFinish" width="6" height="6" patternUnits="userSpaceOnUse">
               <rect width="3" height="3" fill="#ffffff" />
-              <rect x="3" width="3" height="3" fill="#000000" />
-              <rect y="3" width="3" height="3" fill="#000000" />
+              <rect x="3" width="3" height="3" fill="#090d16" />
+              <rect y="3" width="3" height="3" fill="#090d16" />
               <rect x="3" y="3" width="3" height="3" fill="#ffffff" />
             </pattern>
 
-            <radialGradient id="circuitBackdrop" cx="50%" cy="50%" r="55%">
-              <stop offset="0%" stopColor="#141a22" />
-              <stop offset="100%" stopColor="#0b0f15" />
+            {/* Local Terrain Infield Gradient */}
+            <radialGradient id="circuitBackdrop" cx="50%" cy="50%" r="65%">
+              <stop offset="0%" stopColor={theme.infieldGradient.start} />
+              <stop offset="55%" stopColor={theme.infieldGradient.mid} />
+              <stop offset="100%" stopColor={theme.infieldGradient.end} />
             </radialGradient>
+
+            {/* Infield terrain pattern */}
+            <pattern id="terrainGrid" width="32" height="32" patternUnits="userSpaceOnUse">
+              <rect width="32" height="32" fill="transparent" />
+              <line x1="0" y1="0" x2="32" y2="0" stroke="rgba(255,255,255,0.04)" strokeWidth="0.8" />
+            </pattern>
           </defs>
 
           {/* Root Transform Group with Zoom & Pan */}
@@ -607,17 +645,115 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
             transform={`translate(${(centerX + pan.x).toFixed(1)}, ${(centerY + pan.y).toFixed(1)}) scale(${zoom.toFixed(2)}) translate(${(-centerX).toFixed(1)}, ${(-centerY).toFixed(1)})`}
             className="transition-transform duration-100 ease-out"
           >
-            {/* Infield Base Terrain */}
+            {/* Infield Base Terrain with Local Flavour */}
             <rect
-              x={sectionGeo.minX - 16}
-              y={sectionGeo.minY - 16}
-              width={sectionGeo.width + 32}
-              height={sectionGeo.height + 32}
-              rx={24}
+              x={sectionGeo.minX - 24}
+              y={sectionGeo.minY - 24}
+              width={sectionGeo.width + 48}
+              height={sectionGeo.height + 48}
+              rx={32}
               fill="url(#circuitBackdrop)"
-              stroke="#1e293b"
-              strokeWidth="1.5"
+              fillOpacity={theme.infieldFillOpacity}
+              stroke={theme.infieldStroke}
+              strokeWidth="2"
+              filter="drop-shadow(0 10px 24px rgba(0,0,0,0.45))"
             />
+            <rect
+              x={sectionGeo.minX - 24}
+              y={sectionGeo.minY - 24}
+              width={sectionGeo.width + 48}
+              height={sectionGeo.height + 48}
+              rx={32}
+              fill="url(#terrainGrid)"
+            />
+
+            {/* Local Landscape Elements */}
+            {theme.terrainType === 'mountain' && (
+              <g pointerEvents="none">
+                {/* Australian Red-Ochre Sandstone Bluff */}
+                <ellipse cx={centerX - 75} cy={centerY - 35} rx="38" ry="24" fill="#78350f" fillOpacity="0.6" stroke="#9a3412" strokeWidth="1.5" />
+                <ellipse cx={centerX + 80} cy={centerY + 35} rx="44" ry="26" fill="#78350f" fillOpacity="0.5" stroke="#9a3412" strokeWidth="1.5" />
+                {/* Topographic elevation arcs */}
+                <path d={`M ${centerX - 110} ${centerY - 10} Q ${centerX - 20} ${centerY - 55} ${centerX + 80} ${centerY - 20}`} stroke="#d97706" strokeWidth="1.6" strokeDasharray="6 4" fill="none" opacity="0.6" />
+                <path d={`M ${centerX - 90} ${centerY + 20} Q ${centerX} ${centerY + 60} ${centerX + 110} ${centerY + 20}`} stroke="#d97706" strokeWidth="1.2" strokeDasharray="5 3" fill="none" opacity="0.5" />
+                {/* Eucalyptus tree canopies */}
+                <circle cx={centerX - 95} cy={centerY + 45} r="9" fill="#14532d" />
+                <circle cx={centerX - 80} cy={centerY + 52} r="12" fill="#1b4332" />
+                <circle cx={centerX - 62} cy={centerY + 48} r="8" fill="#14532d" />
+                <circle cx={centerX + 68} cy={centerY - 52} r="10" fill="#1b4332" />
+                <circle cx={centerX + 86} cy={centerY - 48} r="7" fill="#14532d" />
+                {/* Lookout text */}
+                <text x={centerX - 75} y={centerY - 33} textAnchor="middle" className="font-mono text-[6px] tracking-wider fill-amber-300 font-bold uppercase select-none opacity-80">
+                  MT PANORAMA · 862M
+                </text>
+              </g>
+            )}
+
+            {theme.terrainType === 'countryside' && (
+              <g pointerEvents="none">
+                {/* English Rolling Green Meadow Contours */}
+                <ellipse cx={centerX - 60} cy={centerY - 40} rx="48" ry="22" fill="#15803d" fillOpacity="0.4" stroke="#22c55e" strokeWidth="1" strokeDasharray="5 3" />
+                <ellipse cx={centerX + 65} cy={centerY + 40} rx="50" ry="24" fill="#15803d" fillOpacity="0.4" stroke="#22c55e" strokeWidth="1" strokeDasharray="5 3" />
+                {/* Golden Gravel Traps */}
+                <path d={`M ${centerX - 110} ${centerY - 25} Q ${centerX - 70} ${centerY - 65} ${centerX - 30} ${centerY - 45}`} stroke="#d97706" strokeWidth="6" strokeLinecap="round" opacity="0.45" fill="none" />
+                <path d={`M ${centerX + 30} ${centerY + 45} Q ${centerX + 70} ${centerY + 65} ${centerX + 110} ${centerY + 25}`} stroke="#d97706" strokeWidth="6" strokeLinecap="round" opacity="0.45" fill="none" />
+                {/* Dense Oak & Pine Woodland */}
+                <circle cx={centerX - 85} cy={centerY - 45} r="12" fill="#14532d" />
+                <circle cx={centerX - 70} cy={centerY - 50} r="15" fill="#0f381e" />
+                <circle cx={centerX - 52} cy={centerY - 42} r="11" fill="#14532d" />
+                <circle cx={centerX + 50} cy={centerY + 48} r="13" fill="#14532d" />
+                <circle cx={centerX + 70} cy={centerY + 55} r="15" fill="#0f381e" />
+                <circle cx={centerX + 90} cy={centerY + 45} r="10" fill="#14532d" />
+                {/* Kent Downs watermark */}
+                <text x={centerX + 65} y={centerY + 42} textAnchor="middle" className="font-mono text-[6px] tracking-wider fill-emerald-300 font-bold uppercase select-none opacity-80">
+                  KENT DOWNS & WOODS
+                </text>
+              </g>
+            )}
+
+            {theme.terrainType === 'riviera' && (
+              <g pointerEvents="none">
+                {/* Port Hercules Azure Marina Basin */}
+                <rect x={centerX - 80} y={centerY - 48} width="160" height="96" rx="28" fill="#0284c7" fillOpacity="0.55" stroke="#38bdf8" strokeWidth="1.5" strokeOpacity="0.6" />
+                {/* Marina water shimmer lines */}
+                <path d={`M ${centerX - 60} ${centerY - 20} Q ${centerX} ${centerY - 28} ${centerX + 60} ${centerY - 20}`} stroke="#e0f2fe" strokeWidth="1.2" strokeOpacity="0.5" fill="none" />
+                <path d={`M ${centerX - 50} ${centerY + 20} Q ${centerX} ${centerY + 12} ${centerX + 50} ${centerY + 20}`} stroke="#e0f2fe" strokeWidth="1.2" strokeOpacity="0.5" fill="none" />
+                {/* Yacht berths & moored luxury boats */}
+                <line x1={centerX - 55} y1={centerY - 38} x2={centerX - 55} y2={centerY - 10} stroke="#cbd5e1" strokeWidth="2.5" />
+                <rect x={centerX - 58} y={centerY - 34} width="6" height="18" rx="2" fill="#ffffff" stroke="#0284c7" strokeWidth="0.8" />
+                <line x1={centerX - 35} y1={centerY - 38} x2={centerX - 35} y2={centerY - 10} stroke="#cbd5e1" strokeWidth="2.5" />
+                <rect x={centerX - 38} y={centerY - 36} width="6" height="22" rx="2" fill="#ffffff" stroke="#0284c7" strokeWidth="0.8" />
+                <line x1={centerX + 35} y1={centerY + 10} x2={centerX + 35} y2={centerY + 38} stroke="#cbd5e1" strokeWidth="2.5" />
+                <rect x={centerX + 32} y={centerY + 14} width="6" height="20" rx="2" fill="#ffffff" stroke="#0284c7" strokeWidth="0.8" />
+                <line x1={centerX + 55} y1={centerY + 10} x2={centerX + 55} y2={centerY + 38} stroke="#cbd5e1" strokeWidth="2.5" />
+                <rect x={centerX + 52} y={centerY + 16} width="6" height="18" rx="2" fill="#ffffff" stroke="#0284c7" strokeWidth="0.8" />
+                {/* Terracotta promenade border */}
+                <rect x={centerX - 82} y={centerY - 50} width="164" height="6" rx="2" fill="#ea580c" fillOpacity="0.65" />
+                {/* Port Hercules text */}
+                <text x={centerX} y={centerY - 38} textAnchor="middle" className="font-mono text-[6px] tracking-wider fill-sky-200 font-bold uppercase select-none opacity-90">
+                  PORT HERCULES MARINA
+                </text>
+              </g>
+            )}
+
+            {theme.terrainType === 'speedway' && (
+              <g pointerEvents="none">
+                {/* Speedway Striped Fairway Lawns */}
+                <ellipse cx={centerX} cy={centerY + 24} rx="65" ry="24" fill="#16a34a" fillOpacity="0.45" stroke="#22c55e" strokeWidth="1" />
+                {/* Dual Infield Lakes / Ponds (IMS Historic Water Hazards) */}
+                <ellipse cx={centerX - 35} cy={centerY + 25} rx="22" ry="12" fill="#0284c7" fillOpacity="0.75" stroke="#38bdf8" strokeWidth="1.2" />
+                <circle cx={centerX - 35} cy={centerY + 25} r="3" fill="#ffffff" fillOpacity="0.8" />
+                <circle cx={centerX - 35} cy={centerY + 25} r="7" stroke="#ffffff" strokeWidth="0.6" strokeDasharray="2 2" fill="none" opacity="0.6" />
+                <ellipse cx={centerX + 35} cy={centerY + 25} rx="22" ry="12" fill="#0284c7" fillOpacity="0.75" stroke="#38bdf8" strokeWidth="1.2" />
+                <circle cx={centerX + 35} cy={centerY + 25} r="3" fill="#ffffff" fillOpacity="0.8" />
+                <circle cx={centerX + 35} cy={centerY + 25} r="7" stroke="#ffffff" strokeWidth="0.6" strokeDasharray="2 2" fill="none" opacity="0.6" />
+                {/* Yard of Bricks historical start marker */}
+                <rect x={centerX - 18} y={centerY - 45} width="36" height="6" fill="#b91c1c" stroke="#fef08a" strokeWidth="0.8" />
+                <text x={centerX} y={centerY - 40} textAnchor="middle" className="font-mono text-[4.5px] tracking-wider fill-amber-200 font-bold uppercase select-none">
+                  YARD OF BRICKS
+                </text>
+              </g>
+            )}
 
             {/* Center Watermark & Quick Switcher */}
             <g
@@ -626,21 +762,22 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
               className="cursor-pointer group"
             >
               <rect
-                x="-80"
-                y="-22"
-                width="160"
-                height="44"
-                rx="22"
-                fill="rgba(15, 23, 42, 0.75)"
-                stroke="rgba(245, 158, 11, 0.3)"
-                strokeWidth="1"
-                className="group-hover:stroke-amber-400 group-hover:fill-slate-900 transition-all"
+                x="-85"
+                y="-24"
+                width="170"
+                height="48"
+                rx="24"
+                fill="rgba(15, 23, 42, 0.9)"
+                stroke={theme.accentHex}
+                strokeWidth="1.5"
+                filter="drop-shadow(0 4px 14px rgba(0,0,0,0.6))"
+                className="group-hover:brightness-125 transition-all"
               />
               <text
                 x="0"
-                y="-4"
+                y="-5"
                 textAnchor="middle"
-                className="font-extrabold tracking-wider text-[11px] uppercase select-none font-sans fill-stone-100 group-hover:fill-amber-300 transition-colors"
+                className="font-black tracking-wider text-[11px] uppercase select-none font-sans fill-white group-hover:fill-amber-300 transition-colors"
               >
                 {track.name}
               </text>
@@ -648,9 +785,9 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
                 x="0"
                 y="11"
                 textAnchor="middle"
-                className="font-mono text-[8px] tracking-wider select-none uppercase fill-amber-400 font-semibold group-hover:underline"
+                className="font-mono text-[8px] tracking-wider select-none uppercase fill-stone-300 font-bold group-hover:underline"
               >
-                ↺ {track.country} · {NC} SPACES
+                {theme.landmark} · {track.country.split(' ')[1] || '🏁'} · {NC} SPACES
               </text>
             </g>
 
@@ -696,12 +833,12 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
 
                     return (
                       <g key={`sec-cell-${cell.idx}-lane-${lane}`}>
-                        {/* Road surface: standard asphalt on corners (no red striping) */}
+                        {/* Road surface: crisp asphalt with high visual contrast */}
                         <polygon
                           points={pts}
-                          fill={isBottleneck ? '#3f2f21' : '#1a1f28'}
-                          stroke={isBottleneck ? '#854d0e' : '#334155'}
-                          strokeWidth={isBottleneck ? 1.2 : 0.7}
+                          fill={isBottleneck ? '#3d2516' : theme.asphaltColor || '#181e28'}
+                          stroke={isBottleneck ? '#f59e0b' : theme.asphaltStroke || '#64748b'}
+                          strokeWidth={isBottleneck ? 1.8 : 1.0}
                         />
 
                         {/* Divider line on straight */}
@@ -712,9 +849,9 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
                             x2={cell.dividerLine.x2}
                             y2={cell.dividerLine.y2}
                             stroke="#ffffff"
-                            strokeWidth="0.8"
-                            strokeDasharray="4 3"
-                            opacity={0.4}
+                            strokeWidth="1"
+                            strokeDasharray="5 3"
+                            opacity={0.65}
                           />
                         )}
 
@@ -726,8 +863,8 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
                             x2={cell.cornerOutsideDivider.x2}
                             y2={cell.cornerOutsideDivider.y2}
                             stroke="#ffffff"
-                            strokeWidth="1.2"
-                            opacity={0.75}
+                            strokeWidth="1.5"
+                            opacity={0.85}
                           />
                         )}
 
@@ -741,41 +878,35 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
                               points={pts}
                               fill={
                                 isSelected
-                                  ? 'rgba(234, 179, 8, 0.55)'
-                                  : 'rgba(255, 255, 255, 0.32)'
+                                  ? 'rgba(245, 158, 11, 0.65)'
+                                  : 'rgba(16, 185, 129, 0.42)'
                               }
-                              stroke={isSelected ? '#fbbf24' : '#ffffff'}
-                              strokeWidth={isSelected ? 2.5 : 1.4}
+                              stroke={isSelected ? '#fbbf24' : '#34d399'}
+                              strokeWidth={isSelected ? 2.8 : 1.6}
                               strokeDasharray={isSelected ? undefined : '4 2'}
-                              className="transition-all hover:fill-amber-300/40"
+                              className="transition-all hover:brightness-125"
                             />
                             {carsHere.length === 0 && (
-                              <text
-                                x={cx.toFixed(1)}
-                                y={cy.toFixed(1)}
-                                dy=".35em"
-                                textAnchor="middle"
-                                className="font-bold text-[10px] pointer-events-none"
-                                fill="#ffffff"
-                                style={{
-                                  paintOrder: 'stroke',
-                                  stroke: '#0b0f15',
-                                  strokeWidth: '2.5px',
-                                }}
-                              >
-                                {getPassTarget(
-                                  activePlayerIdx,
-                                  hm.n,
-                                  lane,
-                                  gameState,
-                                  trackArray,
-                                  options,
-                                  track.sections
-                                )
-                                  ? '➜'
-                                  : ''}
-                                {isSelected ? '✓' : hm.c}
-                              </text>
+                              <g pointerEvents="none">
+                                <circle
+                                  cx={cx.toFixed(1)}
+                                  cy={cy.toFixed(1)}
+                                  r="7.5"
+                                  fill={isSelected ? '#f59e0b' : '#059669'}
+                                  stroke="#ffffff"
+                                  strokeWidth="1.2"
+                                  filter="drop-shadow(0 2px 4px rgba(0,0,0,0.5))"
+                                />
+                                <text
+                                  x={cx.toFixed(1)}
+                                  y={cy.toFixed(1)}
+                                  dy=".35em"
+                                  textAnchor="middle"
+                                  className="font-black text-[9px] fill-white font-mono"
+                                >
+                                  {isSelected ? '✓' : hm.c}
+                                </text>
+                              </g>
                             )}
                           </g>
                         )}
@@ -786,7 +917,7 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
               );
             })}
 
-            {/* Animated Car SVGs Layer (Blue Hatchback for P1, Red Saloon for P2) */}
+            {/* Animated Car SVGs Layer (Blue Hatchback for P1, Red Saloon for P2, Green/Violet for Bots) */}
             <g key="sec-animated-cars-layer">
               {gameCars.map((_, q) => (
                 <CarToken
@@ -800,25 +931,36 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
               ))}
             </g>
 
-            {/* Checkered Start Line */}
+            {/* Start / Finish Line with Local Flavour */}
             <g>
               <line
                 x1={sectionGeo.finishLine.x1}
                 y1={sectionGeo.finishLine.y1}
                 x2={sectionGeo.finishLine.x2}
                 y2={sectionGeo.finishLine.y2}
-                stroke="#0f172a"
-                strokeWidth="5"
+                stroke={theme.terrainType === 'speedway' ? '#7f1d1d' : '#090d16'}
+                strokeWidth="6"
               />
               <line
                 x1={sectionGeo.finishLine.x1}
                 y1={sectionGeo.finishLine.y1}
                 x2={sectionGeo.finishLine.x2}
                 y2={sectionGeo.finishLine.y2}
-                stroke="#ffffff"
-                strokeWidth="4"
-                strokeDasharray="2.5 2.5"
+                stroke={theme.terrainType === 'speedway' ? '#dc2626' : '#ffffff'}
+                strokeWidth="4.5"
+                strokeDasharray={theme.terrainType === 'speedway' ? undefined : '2.5 2.5'}
               />
+              {theme.terrainType === 'speedway' && (
+                <line
+                  x1={sectionGeo.finishLine.x1}
+                  y1={sectionGeo.finishLine.y1}
+                  x2={sectionGeo.finishLine.x2}
+                  y2={sectionGeo.finishLine.y2}
+                  stroke="#ffffff"
+                  strokeWidth="1"
+                  strokeDasharray="2 2"
+                />
+              )}
             </g>
 
             {/* Victory Banner */}
@@ -878,12 +1020,40 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
       onTouchEnd={handleTouchEnd}
       className="w-full h-full relative flex items-center justify-center p-1 sm:p-2 select-none overflow-hidden touch-none cursor-grab active:cursor-grabbing"
     >
+      {/* Local Flavour Ambient Backdrop Image */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden select-none">
+        <img
+          src={theme.image}
+          alt={theme.name}
+          className="w-full h-full object-cover opacity-80 sm:opacity-85 brightness-95 saturate-110 contrast-105 transition-all duration-700"
+        />
+        {/* Subtle perimeter vignette to protect HUD and ActionControls legibility */}
+        <div className="absolute inset-0 bg-gradient-to-t from-stone-950/90 via-transparent to-stone-950/70 pointer-events-none" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_45%,rgba(10,12,18,0.55)_100%)] pointer-events-none" />
+      </div>
+
+      {/* Local Flavour Atmosphere Pill */}
+      <div className="absolute top-2 left-2 sm:top-3 sm:left-3 z-30 flex items-center gap-2 bg-stone-950/85 backdrop-blur-md border border-stone-700/80 rounded-xl px-2.5 py-1.5 shadow-xl select-none max-w-[260px] sm:max-w-none">
+        <span className="text-base select-none">{track.country.split(' ')[1] || '🏁'}</span>
+        <div className="flex flex-col min-w-0">
+          <div className="flex items-center gap-1.5 leading-none">
+            <span className="font-bold text-white text-xs truncate">{theme.landmark}</span>
+            <span className={`text-[10px] font-semibold px-1.5 py-0.2 rounded ${theme.badgeBg} ${theme.badgeBorder} ${theme.badgeText} border hidden xs:inline`}>
+              {track.name}
+            </span>
+          </div>
+          <span className="text-[10px] text-stone-300 font-mono tracking-tight truncate mt-0.5">
+            {theme.weatherFlavour}
+          </span>
+        </div>
+      </div>
+
       {renderZoomToolbar()}
 
       <svg
         viewBox={svgViewBox}
-        className="w-full h-full max-h-[48vh] sm:max-h-[52vh] drop-shadow-2xl"
-        style={{ filter: 'drop-shadow(0 12px 24px rgba(0,0,0,0.5))' }}
+        className="w-full h-full max-h-[48vh] sm:max-h-[52vh] drop-shadow-2xl relative z-10"
+        style={{ filter: 'drop-shadow(0 14px 28px rgba(0,0,0,0.65))' }}
       >
         <defs>
           <pattern
@@ -896,6 +1066,13 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
             <rect width="7" height="7" fill="#1b2028" />
             <rect width="3.5" height="7" fill="#dc2626" opacity="0.65" />
           </pattern>
+
+          {/* Local Infield Gradient */}
+          <radialGradient id="circuitBackdropRect" cx="50%" cy="50%" r="65%">
+            <stop offset="0%" stopColor={theme.infieldGradient.start} />
+            <stop offset="55%" stopColor={theme.infieldGradient.mid} />
+            <stop offset="100%" stopColor={theme.infieldGradient.end} />
+          </radialGradient>
         </defs>
 
         {/* Root Transform Group with Zoom & Pan */}
@@ -903,16 +1080,18 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
           transform={`translate(${(centerX + pan.x).toFixed(1)}, ${(centerY + pan.y).toFixed(1)}) scale(${zoom.toFixed(2)}) translate(${(-centerX).toFixed(1)}, ${(-centerY).toFixed(1)})`}
           className="transition-transform duration-100 ease-out"
         >
-          {/* Base Infield */}
+          {/* Base Infield with Local Flavor */}
           <rect
-            x={trackGeo.xL - 8}
-            y={trackGeo.yT - 8}
-            width={trackGeo.xR - trackGeo.xL + 16}
-            height={trackGeo.yB - trackGeo.yT + 16}
-            rx={20}
-            fill="#0f172a"
-            stroke="#1e293b"
-            strokeWidth="1.5"
+            x={trackGeo.xL - 12}
+            y={trackGeo.yT - 12}
+            width={trackGeo.xR - trackGeo.xL + 24}
+            height={trackGeo.yB - trackGeo.yT + 24}
+            rx={24}
+            fill="url(#circuitBackdropRect)"
+            fillOpacity={theme.infieldFillOpacity}
+            stroke={theme.infieldStroke}
+            strokeWidth="2"
+            filter="drop-shadow(0 10px 24px rgba(0,0,0,0.45))"
           />
 
           {/* Quick Track Switcher in Infield Center */}
@@ -922,21 +1101,22 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
             className="cursor-pointer group"
           >
             <rect
-              x="-75"
-              y="-20"
-              width="150"
-              height="40"
-              rx="20"
-              fill="rgba(15, 23, 42, 0.7)"
-              stroke="rgba(245, 158, 11, 0.3)"
-              strokeWidth="1"
-              className="group-hover:stroke-amber-400 group-hover:fill-slate-900 transition-all"
+              x="-85"
+              y="-24"
+              width="170"
+              height="48"
+              rx="24"
+              fill="rgba(15, 23, 42, 0.9)"
+              stroke={theme.accentHex}
+              strokeWidth="1.5"
+              filter="drop-shadow(0 4px 14px rgba(0,0,0,0.6))"
+              className="group-hover:brightness-125 transition-all"
             />
             <text
               x="0"
-              y="-3"
+              y="-5"
               textAnchor="middle"
-              className="font-extrabold tracking-wider text-[11px] uppercase select-none font-sans fill-stone-100 group-hover:fill-amber-300 transition-colors"
+              className="font-black tracking-wider text-[11px] uppercase select-none font-sans fill-white group-hover:fill-amber-300 transition-colors"
             >
               {track.name}
             </text>
@@ -944,9 +1124,9 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
               x="0"
               y="11"
               textAnchor="middle"
-              className="font-mono text-[8px] tracking-wider select-none uppercase fill-amber-400 font-semibold group-hover:underline"
+              className="font-mono text-[8px] tracking-widest select-none uppercase fill-stone-300 font-bold group-hover:underline"
             >
-              ↺ {track.country} · {NC} SPACES
+              {theme.landmark} · {track.country.split(' ')[1] || '🏁'} · {NC} SPACES
             </text>
           </g>
 
@@ -1019,12 +1199,12 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
 
                   return (
                     <g key={`seg-${idx}-${lane}`}>
-                      {/* Road surface: standard asphalt on corners (no red striping) */}
+                      {/* Road surface: crisp asphalt with high visual contrast */}
                       <polygon
                         points={pts}
-                        fill={isBottleneck ? '#3f2f21' : '#1a1f28'}
-                        stroke={isBottleneck ? '#854d0e' : '#334155'}
-                        strokeWidth={isBottleneck ? 1.2 : 0.7}
+                        fill={isBottleneck ? '#3d2516' : theme.asphaltColor || '#181e28'}
+                        stroke={isBottleneck ? '#f59e0b' : theme.asphaltStroke || '#64748b'}
+                        strokeWidth={isBottleneck ? 1.8 : 1.0}
                       />
 
                       {!isBottleneck && lane === 0 && (
@@ -1034,9 +1214,9 @@ export const TrackCanvas: React.FC<TrackCanvasProps> = ({
                           x2={at(cell.g, cell.t2, 0)[0].toFixed(1)}
                           y2={at(cell.g, cell.t2, 0)[1].toFixed(1)}
                           stroke="#ffffff"
-                          strokeWidth="0.8"
-                          strokeDasharray="4 3"
-                          opacity={0.4}
+                          strokeWidth="1.2"
+                          strokeDasharray="5 3"
+                          opacity={0.8}
                         />
                       )}
 

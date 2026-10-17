@@ -93,7 +93,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <span>🤖 AI Mode</span>
               </button>
             </div>
-            {options.bot === 'medium' && (
+            {options.bot === 'medium' ? (
               <div className="flex items-center justify-between rounded-xl border border-stone-800 bg-stone-950/60 px-3 py-2 mt-2">
                 <div>
                   <span className="font-semibold text-white block">Number of AI Bots</span>
@@ -112,6 +112,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       }`}
                     >
                       {count}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between rounded-xl border border-stone-800 bg-stone-950/60 px-3 py-2 mt-2">
+                <div>
+                  <span className="font-semibold text-white block">Human Drivers</span>
+                  <span className="text-[11px] text-stone-400">Pass & play with 2–4 drivers</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  {([1, 2, 3] as const).map((count) => (
+                    <button
+                      key={count}
+                      onClick={() => setBotCount(count)}
+                      aria-pressed={options.botCount === count}
+                      className={`h-8 w-10 rounded-lg border text-xs font-bold transition ${
+                        options.botCount === count
+                          ? 'bg-amber-500/20 border-amber-500 text-amber-300'
+                          : 'bg-stone-900 border-stone-700 text-stone-400 hover:text-white'
+                      }`}
+                    >
+                      {count + 1}P
                     </button>
                   ))}
                 </div>
@@ -171,7 +194,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div>
                 <span className="font-semibold text-white block">⏭ Discard Rule</span>
                 <span className="text-[11px] text-stone-400">
-                  Leader discards highest, trailer discards lowest (active from Round 2)
+                  Leader discards highest, trailer discards lowest (in 3p/4p middle drivers keep all dice)
                 </span>
               </div>
               <button

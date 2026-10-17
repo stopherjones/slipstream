@@ -361,6 +361,7 @@ export function computeBotMove(
 
   for (let dieIdx = 0; dieIdx < p.dice.length; dieIdx++) {
     if (p.used.includes(dieIdx)) continue;
+    if (gameState.discardedDice?.[botIdx]?.includes(dieIdx)) continue;
     const die = p.dice[dieIdx];
     const maxSlip = Math.min(p.slip, 1);
     const maxMom = Math.min(p.mom, 1);
@@ -407,7 +408,9 @@ export function computeBotMove(
   }
 
   if (!best) {
-    const firstAvail = p.dice.findIndex((_, idx) => !p.used.includes(idx));
+    const firstAvail = p.dice.findIndex(
+      (_, idx) => !p.used.includes(idx) && !gameState.discardedDice?.[botIdx]?.includes(idx)
+    );
     const d = Math.max(0, firstAvail);
     const cands = computeReach(botIdx, p.dice[d] ?? 1, gameState, track, options, outsideLanes);
     const firstKey = Object.keys(cands)[0] ?? `${p.pos}:${p.lane}`;
